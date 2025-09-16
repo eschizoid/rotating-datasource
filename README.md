@@ -1,191 +1,330 @@
-# sm-rotator
+# Rotating Data Source
 
-An example Java 17 project that demonstrates how to build a JDBC DataSource that automatically recovers from AWS Secrets
-Manager password rotations.
-
-It provides two small, focused building blocks:
-
-- `RotatingDataSource` — wraps any `JDBC` `DataSource` and recreates it from an AWS Secrets Manager secret on demand.
-- `DbClient` — executes `JDBC` operations and retries once on authentication failures, triggering a rotation in between.
-
-The code is deliberately compact, uses a functional style, and is fully covered by an integration test that runs
-PostgreSQL and Localstack via Testcontainers.
-
-## Table of contents
-
-- Features
-- Architecture overview
-- Modules
-- Repository structure
-- Requirements
-- Build
-- Run the examples
-- Configuration
-- How rotation works
-- Testing (with Testcontainers)
-- Logging
-- Troubleshooting
-- FAQ
+A JDBC DataSource that automatically recovers from AWS Secrets Manager credential rotations, with built-in retry logic
+for authentication failures.
 
 ## Features
 
-- AWS Secrets Manager integration using AWS SDK v2
-- Functional, immutable data model (DbSecret is a Java record)
-- Thread-safe rotation with AtomicReference (no explicit locks)
-- Optional proactive refresh via periodic secret version checks
-- Optional in-memory caching of secret value/version (disabled by default)
-- Declarative retry utility (`Retry.onException`)
-- HikariCP example for connection pooling
-- End-to-end integration test using Testcontainers (PostgreSQL + Localstack)
+- **RotatingDataSource**: A `javax.sql.DataSource` wrapper that can refresh its underlying connection pool on demand or
+  proactively
+- **Built-in Retry Logic**: Automatic retry on authentication failures with configurable policies (fixed delay or
+  exponential backoff)
+- **Custom Auth Error Detection**: Pluggable authentication error detection for vendor-specific error codes
+- **Retry Observability**: Optional listener interface for metrics and monitoring
+- **DbClient**: Thin JDBC client with automatic auth-failure retry
+- **Minimal Dependencies**: Only AWS SDK, Jackson, and a JDBC driver
+- **ORM-Friendly**: Works seamlessly with Hibernate, JPA, and Spring Data through `Retry.authRetry()`
 
-## Architecture overview
+## Quick Start
 
-Core classes:
+### 1. Basic Usage
 
-- `DbSecret` — immutable record mapping the common RDS secret JSON fields: username, password, engine, host, port,
-  dbname.
-- `SecretsManagerProvider` — lazily builds a Secrets Manager client; can be redirected to Localstack via config.
-- `SecretHelper` — fetches a secret by id and deserializes JSON into DbSecret using Jackson.
-- `DataSourceFactory` — functional interface to create a DataSource from a DbSecret (e.g., configure HikariCP).
-- `RotatingDataSource` — holds a DataSource in an AtomicReference; reset() rebuilds it from the latest secret. Closes
-  the previous pool if AutoCloseable.
-- `Retry` — small utility for retrying a single time when a predicate on an exception matches.
-- `DbClient` — runs `JDBC` operations with a single auth-retry path. If `SQLState` `28000` or certain messages are seen,
-  it calls `reset()` and retries once.
+```java
+// Create a rotating data source
+final var rotatingDs = new RotatingDataSource(
+    "my-db-secret",
+    secret -> {
+        var config = new HikariConfig();
+        config.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
+        config.setUsername(secret.username());
+        config.setPassword(secret.password());
+        return new HikariDataSource(config);
+    }
+);
 
-## Modules
+// Use DbClient for JDBC operations with automatic retry
+final var client = new DbClient(rotatingDs);
+final var result = client.executeWithRetry(conn -> {
+    try (var stmt = conn.createStatement()) {
+        var rs = stmt.executeQuery("SELECT COUNT(*) FROM users");
+        return rs.next() ? rs.getInt(1) : 0;
+    }
+});
+```
 
-- `sm-core` — core library with `RotatingDataSource`, `DbClient`, and supporting classes.
-  See [README.md](sm-core/README.md) for details.
-- `connection-pool-examples` — runnable sample apps for different JDBC pools (HikariCP, Tomcat JDBC, DBCP2). See
-  [README.md](connection-pool-examples/README.md).
-- `orm-examples` — runnable ORM integrations (Hibernate, JPA, jOOQ, Spring Data). See
-  [README.md](orm-examples/README.md).
+### 2. Custom Retry Policy
 
-## Repository structure
+```java
+// Exponential backoff: 5 attempts, starting at 100ms, up to 30s, with jitter
+final var policy = Retry.Policy.exponential(5, 100L);
 
-- sm-core/ — core library (`RotatingDataSource`, `DbClient`, `DbSecret`, etc.)
-- connection-pool-examples/ — runnable apps showcasing different pools
-    - hikaricp-app/
-    - tomcat-jdbc-app/
-    - dbcp2-app/
-- orm-examples/ — runnable ORM integrations
-    - hibernate-app/
-    - jpa-app/
-    - jooq-app/
-    - spring-data-app/
+final var rotatingDs = new RotatingDataSource(
+    "my-db-secret",
+    factory,
+    0L,      // no proactive refresh
+    policy   // exponential backoff on auth errors
+);
+```
 
-## Requirements
+### 3. Proactive Refresh
 
-- Java 17+
-- Maven 3.9+
-- Docker (only required for the integration test with Testcontainers)
+```java
+// Check secret version every 60 seconds and refresh if changed
+final var rotatingDs = new RotatingDataSource(
+    "my-db-secret",
+    factory,
+    60L  // check every 60 seconds
+);
+```
 
-## Build
+### 4. ORM Integration
 
-Common tasks:
+```java
+// Configure your ORM to use RotatingDataSource
+final var rotatingDs = new RotatingDataSource("my-db-secret", factory);
 
-- `mvn -q -DskipTests clean package` — build all modules without tests
-- `mvn -q clean test` — build all and run tests (integration tests live in connection-pool-examples; requires Docker)
-- Build only sm-core: `mvn -q -pl sm-core -am -DskipTests clean package`
-- Build only examples: `mvn -q -pl connection-pool-examples -am -DskipTests clean package`
+// Hibernate/JPA - automatic retry on connection acquisition
+final var users = entityManager.createQuery("FROM User", User.class).getResultList();
 
-## Run the examples
+// Persist operations
+entityManager.persist(newUser);
+entityManager.flush();
 
-This repository provides runnable demo apps under `connection-pool-examples` and ORM demos under `orm-examples`. Pick a
-pool or ORM and follow the instructions in their respective READMEs:
+// Note: Retry.authRetry() is only needed for rare edge cases where
+// credentials expire during long-running transactions
+```
 
-- Connection pools: [README.md](connection-pool-examples/README.md)
-- ORMs: [README.md](orm-examples/README.md)
+### 5. Vendor-Specific Error Detection
 
-For a code-level usage example with `RotatingDataSource` and `DbClient`, see [README.md](sm-core/README.md).
+```java
+// Oracle-specific auth error detection
+final var oracleDetector = Retry.AuthErrorDetector.custom(e ->
+    e.getErrorCode() == 1017 ||  // ORA-01017: invalid username/password
+    e.getErrorCode() == 28000    // ORA-28000: account is locked
+);
+
+final var rotatingDs = new RotatingDataSource(
+    "oracle-secret",
+    factory,
+    0L,
+    Retry.RetryPolicy.fixed(2, 50L),
+    oracleDetector
+);
+```
+
+### 6. Retry Observability
+
+```java
+// Built-in logging listener
+final var listener = Retry.RetryListener.logging();
+
+final var result = Retry.onException(
+    () -> executeQuery(),
+    SQLException::isTransient,
+    () -> reconnect(),
+    3, 100L,
+    listener
+);
+
+// Custom metrics listener
+final var metricsListener = (attempt, exception) -> {
+    metrics.increment("db.retries",
+        "attempt", String.valueOf(attempt),
+        "error_type", exception.getClass().getSimpleName()
+    );
+};
+```
+
+## Architecture
+
+### Core Components
+
+- **DbSecret**: Immutable record representing RDS secret JSON structure
+- **SecretsManagerProvider**: Lazily configured AWS Secrets Manager client with optional caching
+- **SecretHelper**: Fetches and deserializes secrets into `DbSecret`
+- **DataSourceFactory**: Functional interface for building `DataSource` from `DbSecret`
+- **RotatingDataSource**: `DataSource` wrapper with automatic retry and credential rotation
+- **Retry**: Functional retry utilities with configurable policies and observability
+- **DbClient**: Thin JDBC client executing operations with auth-failure retry
+
+### Retry Capabilities
+
+The `Retry` class provides three levels of functionality:
+
+1. **Basic Retry**: Fixed delay with custom predicate
+   ```java
+   Retry.onException(
+       () -> executeQuery(),
+       e -> e.getSQLState().startsWith("40"),
+       () -> reconnect(),
+       3, 100L
+   );
+   ```
+
+2. **Policy-Based Retry**: Fixed delay or exponential backoff
+   ```java
+   final var policy = Retry.RetryPolicy.exponential(5, 100L);
+   Retry.onException(
+       () -> executeQuery(),
+       SQLException::isTransient,
+       () -> {},
+       policy
+   );
+   ```
+
+### Authentication Error Detection
+
+The library detects auth errors using:
+
+- **SQLState codes**: `28000` (invalid authorization), `28P01` (PostgreSQL invalid password)
+- **Message keywords**: "access denied", "authentication failed", "invalid password", etc.
+
+You can customize detection for specific vendors:
+
+```java
+// MySQL example
+final var mysqlDetector = Retry.AuthErrorDetector.custom(e ->
+    e.getErrorCode() == 1045 ||  // Access denied
+    e.getErrorCode() == 1044     // Access denied for database
+);
+
+// Combine with default heuristics
+final var combined = Retry.AuthErrorDetector.defaultDetector().or(mysqlDetector);
+```
 
 ## Configuration
 
-Configuration options (region, endpoint, credentials) are documented in [README.md](sm-core/README.md). Refer
-there for the canonical list and examples.
+### AWS Credentials
 
-## How rotation works
+Configure via system properties or environment variables:
 
-1) You run a query using `DbClient`. It gets a connection from `RotatingDataSource` and executes your operation.
-2) If an `SQLException` occurs with `SQLState` 28000 (or messages like "access denied" / "authentication failed"),
-   `DbClient`
-   treats it as an auth failure.
-3) `DbClient` triggers `RotatingDataSource.reset()`:
-    - `SecretHelper` loads the latest secret JSON from Secrets Manager via `SecretsManagerProvider`.
-    - `DataSourceFactory` builds a new `DataSource` (e.g., a new Hikari pool) from the updated secret.
-    - The previous pool (if `AutoCloseable`) is closed.
-4) `DbClient` retries the operation once using the freshly rebuilt `DataSource`.
+- `aws.region` / `AWS_REGION` (default: us-east-1)
+- `aws.sm.endpoint` / `AWS_SM_ENDPOINT` (for Localstack)
+- `aws.accessKeyId` / `AWS_ACCESS_KEY_ID`
+- `aws.secretAccessKey` / `AWS_SECRET_ACCESS_KEY`
 
-The logic is straightforward by design but resilient to password rotation as long as your secret is updated.
+### Secret Caching
 
-## Testing (with Testcontainers)
+Enable optional caching to reduce AWS API calls:
 
-Integration tests are located under `connection-pool-examples` and use Testcontainers to run PostgreSQL and Localstack.
-See [README.md](connection-pool-examples/README.md) for details.
+- `aws.sm.cache.ttl.millis` / `AWS_SM_CACHE_TTL_MILLIS` (default: 0 = disabled)
 
-Commands (from repository root):
+Example: `aws.sm.cache.ttl.millis=300000` (5 minutes)
 
-- `mvn -q -pl connection-pool-examples -am clean test` — run example integration tests (requires Docker)
-- `mvn -q -Dtests.integration.disable=true -pl connection-pool-examples -am clean test` — skip integration tests
+## Testing
 
-## Logging
+The project includes comprehensive tests using:
 
-This project uses Java's built-in System.Logger for lightweight logging. No extra logging dependency is required.
-You can control logging using standard JDK logging configuration (`java.util.loggin`g), for example, by providing
-`-Djava.util.logging.config.file` to point at a properties file.
+- **Localstack**: Simulates AWS Secrets Manager
+- **Testcontainers**: PostgreSQL database
+- **JUnit 5**: Test framework
 
-## Troubleshooting
+Run tests:
 
-- Tests hang or are very slow when Docker is unavailable:
-    - The integration test contains a fast-fail check and will be skipped when Docker is not accessible. You can also
-      force-skip with -Dtests.integration.disable=true.
-- Authentication errors persist after rotation:
-    - Verify your secret in AWS matches DbSecret fields and that your DataSourceFactory uses the same
-      engine/host/port/dbname/username.
-    - Ensure SecretsManagerProvider is pointed at the correct region/endpoint.
-- SLF4J warnings about missing StaticLoggerBinder:
-    - The project depends on slf4j-simple; ensure your classpath is clean if you swap logging implementations.
+```bash
+mvn clean test
+```
+
+## Spring Boot Integration
+
+```java
+
+@Configuration
+public class DataSourceConfig {
+
+    @Bean
+    public RotatingDataSource rotatingDataSource() {
+        return new RotatingDataSource(
+            "my-db-secret",
+            secret -> {
+                var config = new HikariConfig();
+                config.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
+                config.setUsername(secret.username());
+                config.setPassword(secret.password());
+                config.setMaximumPoolSize(10);
+                return new HikariDataSource(config);
+            },
+            60L,  // proactive refresh every 60 seconds
+            Retry.Policy.exponential(5, 200L)
+        );
+    }
+
+    @Bean
+    public DataSource dataSource(RotatingDataSource rotatingDataSource) {
+        return rotatingDataSource;
+    }
+
+    @Bean
+    public DbClient dbClient(RotatingDataSource rotatingDataSource) {
+        return new DbClient(rotatingDataSource);
+    }
+}
+```
+
+## Hibernate/JPA Configuration
+
+```java
+// Configure Hibernate to use RotatingDataSource
+final var sessionFactory = new Configuration()
+    .setProperty("hibernate.connection.provider_class", 
+        "org.hibernate.connection.DatasourceConnectionProvider")
+    .setProperty("hibernate.connection.datasource", rotatingDataSource)
+    // other Hibernate settings
+    .buildSessionFactory();
+
+// Connection acquisition automatically retries on auth failures
+try (var session = sessionFactory.openSession()) {
+    // No explicit retry needed - handled by RotatingDataSource
+    var users = session.createQuery("FROM User", User.class).list();
+}
+```
 
 ## FAQ
 
-**Q: Does RotatingDataSource rotate proactively?**
-A: It can. By default, it refreshes on demand when you call reset() (triggered by DbClient on auth failures). You can
-also enable proactive refresh by using the RotatingDataSource(secretId, factory, refreshIntervalSeconds) constructor
-with a positive interval; it will periodically check the secret version and refresh when it changes.
+**Q: When does credential rotation happen?**  
+A: Rotation happens in AWS Secrets Manager (via Lambda). This library detects auth failures and refreshes the DataSource
+with new credentials.
 
-**Q: Is there connection leakage during reset?**
-A: `RotatingDataSource` closes the previous DataSource if it implements `AutoCloseable` (`HikariDataSource` does).
+**Q: Does RotatingDataSource automatically retry?**  
+A: Yes! `getConnection()` automatically retries on authentication failures using the configured retry policy (default: 2
+attempts with 50ms delay).
+
+**Q: Does RotatingDataSource rotate proactively?**  
+A: It can. By default, it refreshes on demand when you call `reset()` (triggered automatically on auth failures). Enable
+proactive refresh by passing a positive `refreshIntervalSeconds` to check the secret version periodically.
+
+**Q: Is there connection leakage during reset?**  
+A: No. `RotatingDataSource` closes the previous `DataSource` if it implements `AutoCloseable` (HikariDataSource does).
 Existing connections remain valid until closed by your code or the pool.
 
-**Q: Can I customize the retry policy?**
-A: The Retry utility is intentionally minimal. You can copy it and extend it (e.g., backoff, max attempts, exception
-classifier) without changing the rest of the code.
+**Q: Can I customize the retry policy?**  
+A: Yes! Use `Policy.fixed()` or `Policy.exponential()` factory methods, or create a custom policy with full control over 
+attempts, delays, backoff multiplier, and jitter.
 
-**Q: Does this require a specific pool?**
-A: No. Any `DataSource` can be created by your `DataSourceFactory`. `HikariCP` is used in examples and tests.
+**Q: Does this require a specific connection pool?**  
+A: No. Any `DataSource` can be created by your `DataSourceFactory`. HikariCP is used in examples and tests, but any
+pool (DBCP2, C3P0, etc.) works.
 
-**Q: Can I use DbClient with the ORM examples (Hibernate/JPA/Spring Data)?**
-A: Yes, but it depends on your goal. `DbClient` is a thin `JDBC` helper with an auth-failure retry. ORMs already manage
-units of work and sessions; they don’t automatically use `DbClient`. The recommended approach is to configure your ORM
-to
-use RotatingDataSource as its DataSource so credential rotation is handled transparently. Use `DbClient` only for any
-ad‑hoc raw `JDBC` operations you perform alongside the ORM. If you want a retry on authentication errors around ORM
-operations themselves, implement that at the service layer (e.g., catch the auth error, call RotatingDataSource.reset(),
-and retry once). No ORM-specific changes are required to benefit from rotation.
+**Q: Can I use DbClient with ORMs?**  
+A: Yes, but configure your ORM to use `RotatingDataSource` as its `DataSource` so credential rotation is handled
+transparently. Use `DbClient` for ad-hoc JDBC operations alongside the ORM. For ORM operations that may fail with auth
+errors, use `Retry.authRetry()`.
 
-**Q: Are Retry.authRetry and Retry.onException both needed?**
-A: Yes, they address two different layers and exception models:
+**Q: How do I add metrics for retry attempts?**
 
-- `Retry.onException` is a generic utility for operations that throw checked `SQLException`s. DbClient uses it
-  internally
-  to implement the single auth-failure retry with a RotatingDataSource.reset() in between. Use onException when you are
-  writing lower-level `JDBC` code that deals with checked exceptions and you want a predicate-driven retry with optional
-  delays/attempts.
-- `Retry.authRetry `is a convenience for higher layers (ORMs/service methods) where failures are often wrapped in
-  RuntimeExceptions. It inspects the exception cause chain for an authentication-related SQLException, resets the
-  RotatingDataSource, and retries once. Use authRetry when integrating with Hibernate/JPA/jOOQ/Spring Data calls as
-  shown in the orm-examples.
-  If you don’t need the higher-level convenience (for example, you only use `DbClient` or your own retry wrapper), you
-  can ignore `authRetry`. Conversely, if you only need the ORM convenience, you can ignore `onException`. They are
-  small, independent helpers.
+A: Use `RetryListener` to hook into retry events:
+
+```java
+final var listener = (attempt, exception) -> {
+    metrics.increment("db.retries",
+        "attempt", String.valueOf(attempt),
+        "error_type", exception.getClass().getSimpleName()
+    );
+};
+
+Retry.onException(supplier, shouldRetry, beforeRetry, 3, 100L, listener);
+```
+
+**Q: What if my database vendor uses custom error codes?**  
+A: Implement a custom `AuthErrorDetector`:
+
+```java
+final var customDetector = Retry.AuthErrorDetector.custom(e ->
+    e.getErrorCode() == 1234  // your vendor's auth error code
+);
+
+final var rotatingDs = new RotatingDataSource(secretId, factory, 0L, policy, customDetector);
+```
+
+**Q: Does this work with read replicas?**  
+A: Yes. Create separate `RotatingDataSource` instances for primary and replica secrets, each with its own factory.
