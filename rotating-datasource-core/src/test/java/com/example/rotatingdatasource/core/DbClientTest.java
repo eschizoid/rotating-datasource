@@ -51,7 +51,7 @@ public class DbClientTest {
         r -> r.name(SECRET_ID).secretString(pgSecretJson(postgres, postgres.getPassword())));
 
     rotatingDs =
-        RotatingDataSource.builder().secretId("my-db-secret").factory(hikariFactory()).build();
+        RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
   }
 
   @AfterEach

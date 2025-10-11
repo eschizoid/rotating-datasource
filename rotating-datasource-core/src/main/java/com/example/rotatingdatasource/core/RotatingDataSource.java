@@ -92,7 +92,6 @@ public class RotatingDataSource implements DataSource {
 
   private final String secretId;
   private final DataSourceFactory factory;
-  private final long refreshIntervalSeconds;
   private final Retry.AuthErrorDetector authErrorDetector;
   private final Duration overlapDuration;
   private final Duration gracePeriod;
@@ -112,7 +111,7 @@ public class RotatingDataSource implements DataSource {
   private RotatingDataSource(final Builder builder) {
     this.secretId = builder.secretId;
     this.factory = builder.factory;
-    this.refreshIntervalSeconds = builder.refreshIntervalSeconds;
+    long refreshIntervalSeconds = builder.refreshIntervalSeconds;
     this.authErrorDetector = builder.authErrorDetector;
     this.overlapDuration = builder.overlapDuration;
     this.gracePeriod = builder.gracePeriod;
