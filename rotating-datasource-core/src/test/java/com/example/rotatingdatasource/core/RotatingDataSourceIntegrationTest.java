@@ -85,7 +85,7 @@ public class RotatingDataSourceIntegrationTest {
     @DisplayName("Should create and use initial DataSource successfully")
     void shouldCreateAndUseInitialDataSource() throws Exception {
       final var rotating =
-          RotatingDataSource.builder().secretId("my-db-secret").factory(hikariFactory()).build();
+          RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
 
       try (final var conn = rotating.getConnection();
           final var st = conn.createStatement();
@@ -102,7 +102,7 @@ public class RotatingDataSourceIntegrationTest {
     void shouldCreateWithProactiveRefresh() throws Exception {
       final var rotating =
           RotatingDataSource.builder()
-              .secretId("my-db-secret")
+              .secretId(SECRET_ID)
               .factory(hikariFactory())
               .refreshIntervalSeconds(60)
               .build();
@@ -120,7 +120,7 @@ public class RotatingDataSourceIntegrationTest {
       final var policy = Retry.Policy.exponential(3, 100L);
       final var rotating =
           RotatingDataSource.builder()
-              .secretId("my-db-secret")
+              .secretId(SECRET_ID)
               .factory(hikariFactory())
               .refreshIntervalSeconds(0)
               .retryPolicy(policy)
@@ -137,7 +137,7 @@ public class RotatingDataSourceIntegrationTest {
     @DisplayName("Should delegate JDBC operations to underlying DataSource")
     void shouldDelegateJdbcOperations() throws Exception {
       final var rotating =
-          RotatingDataSource.builder().secretId("my-db-secret").factory(hikariFactory()).build();
+          RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
 
       assertDoesNotThrow(() -> rotating.getLoginTimeout());
       assertDoesNotThrow(() -> rotating.setLoginTimeout(30));
@@ -160,7 +160,7 @@ public class RotatingDataSourceIntegrationTest {
     @DisplayName("Should manually reset and swap pool closing old one")
     void shouldResetAndSwapPoolClosingOldOne() throws Exception {
       final var rotating =
-          RotatingDataSource.builder().secretId("my-db-secret").factory(hikariFactory()).build();
+          RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
 
       final var ds1 = rotating.unwrap(HikariDataSource.class);
       assertFalse(ds1.isClosed());
@@ -193,7 +193,7 @@ public class RotatingDataSourceIntegrationTest {
     void shouldProactivelyRefreshWhenVersionChanges() throws Exception {
       final var rotating =
           RotatingDataSource.builder()
-              .secretId("my-db-secret")
+              .secretId(SECRET_ID)
               .factory(hikariFactory())
               .refreshIntervalSeconds(1)
               .build();
@@ -223,7 +223,7 @@ public class RotatingDataSourceIntegrationTest {
     void shouldNotRefreshWhenVersionUnchanged() throws Exception {
       final var rotating =
           RotatingDataSource.builder()
-              .secretId("my-db-secret")
+              .secretId(SECRET_ID)
               .factory(hikariFactory())
               .refreshIntervalSeconds(1)
               .build();
@@ -243,7 +243,7 @@ public class RotatingDataSourceIntegrationTest {
     @DisplayName("Should handle multiple consecutive resets")
     void shouldHandleMultipleResets() throws Exception {
       final var rotating =
-          RotatingDataSource.builder().secretId("my-db-secret").factory(hikariFactory()).build();
+          RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
 
       for (int i = 0; i < 5; i++) {
         rotating.reset();
@@ -266,7 +266,7 @@ public class RotatingDataSourceIntegrationTest {
       final var policy = Retry.Policy.fixed(3, 100L);
       final var rotating =
           RotatingDataSource.builder()
-              .secretId("my-db-secret")
+              .secretId(SECRET_ID)
               .factory(hikariFactory())
               .refreshIntervalSeconds(0)
               .retryPolicy(policy)
@@ -285,7 +285,7 @@ public class RotatingDataSourceIntegrationTest {
       final var policy = Retry.Policy.exponential(5, 50L);
       final var rotating =
           RotatingDataSource.builder()
-              .secretId("my-db-secret")
+              .secretId(SECRET_ID)
               .factory(hikariFactory())
               .refreshIntervalSeconds(0)
               .retryPolicy(policy)
@@ -307,7 +307,7 @@ public class RotatingDataSourceIntegrationTest {
     @DisplayName("Should handle concurrent connection requests")
     void shouldHandleConcurrentConnectionRequests() throws Exception {
       final var rotating =
-          RotatingDataSource.builder().secretId("my-db-secret").factory(hikariFactory()).build();
+          RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
 
       final var executor = Executors.newFixedThreadPool(10);
       final var errors = new ConcurrentLinkedQueue<Throwable>();
@@ -342,7 +342,7 @@ public class RotatingDataSourceIntegrationTest {
     @DisplayName("Should handle concurrent reset calls")
     void shouldHandleConcurrentResetCalls() throws Exception {
       final var rotating =
-          RotatingDataSource.builder().secretId("my-db-secret").factory(hikariFactory()).build();
+          RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
       final var executor = Executors.newFixedThreadPool(5);
       final var errors = new ConcurrentLinkedQueue<Throwable>();
 
@@ -377,7 +377,7 @@ public class RotatingDataSourceIntegrationTest {
     @DisplayName("Should handle concurrent get + reset operations")
     void shouldHandleConcurrentGetAndReset() throws Exception {
       final var rotating =
-          RotatingDataSource.builder().secretId("my-db-secret").factory(hikariFactory()).build();
+          RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
       final var executor = Executors.newFixedThreadPool(10);
       final var errors = new ConcurrentLinkedQueue<Throwable>();
       final var successCount = new AtomicInteger(0);
@@ -436,7 +436,7 @@ public class RotatingDataSourceIntegrationTest {
     @DisplayName("Should shutdown and close current pool")
     void shouldShutdownCloseCurrentPool() throws Exception {
       final var rotating =
-          RotatingDataSource.builder().secretId("my-db-secret").factory(hikariFactory()).build();
+          RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
 
       final var ds = rotating.unwrap(HikariDataSource.class);
       assertFalse(ds.isClosed());
@@ -452,7 +452,7 @@ public class RotatingDataSourceIntegrationTest {
     void shouldStopSchedulerOnShutdown() throws Exception {
       final var rotating =
           RotatingDataSource.builder()
-              .secretId("my-db-secret")
+              .secretId(SECRET_ID)
               .factory(hikariFactory())
               .refreshIntervalSeconds(1)
               .build();
@@ -485,7 +485,7 @@ public class RotatingDataSourceIntegrationTest {
     @DisplayName("Should handle shutdown with no scheduler")
     void shouldHandleShutdownWithNoScheduler() {
       final var rotating =
-          RotatingDataSource.builder().secretId("my-db-secret").factory(hikariFactory()).build();
+          RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
       assertDoesNotThrow(rotating::shutdown);
     }
   }
