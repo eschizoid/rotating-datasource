@@ -1022,11 +1022,10 @@ public final class Retry {
    *
    * @param <T> result type
    * @param op operation to execute
-   * @return operation result
    * @throws RuntimeException if all attempts fail
    */
-  public static <T> T transientRetry(final Supplier<? extends T> op) {
-    return transientRetry(op, Policy.fixed(3, 50L));
+  public static <T> void transientRetry(final Supplier<? extends T> op) {
+    transientRetry(op, Policy.fixed(3, 50L));
   }
 
   /**
@@ -1138,7 +1137,7 @@ public final class Retry {
    * @param op operation to execute
    * @throws RuntimeException if all attempts fail
    */
-  public static void transientRetry(final Runnable op) {
+  static void transientRetry(final Runnable op) {
     transientRetry(
         (Supplier<Void>)
             () -> {
@@ -1147,7 +1146,6 @@ public final class Retry {
             });
   }
 
-  // Package-private to keep API minimal while enabling testing and potential reuse.
   static <T> T authRetry(final Supplier<? extends T> op, final Runnable reset) {
     return authRetry(op, reset, AuthErrorDetector.defaultDetector());
   }
@@ -1323,7 +1321,7 @@ public final class Retry {
    * @param e the exception to check
    * @return true if the exception is a transient connection error
    */
-  static boolean isTransientConnectionError(final SQLException e) {
+  public static boolean isTransientConnectionError(final SQLException e) {
     if (e == null) return false;
 
     final var state = e.getSQLState();

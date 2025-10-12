@@ -88,7 +88,7 @@ import javax.sql.DataSource;
  *     .build();
  * }</pre>
  */
-public class RotatingDataSource implements DataSource {
+public final class RotatingDataSource implements DataSource {
 
   private static final Logger logger = System.getLogger(RotatingDataSource.class.getName());
 
@@ -312,22 +312,6 @@ public class RotatingDataSource implements DataSource {
         "Credentials are managed at the pool level via DataSourceFactory");
   }
 
-  private Connection tryGetConnectionWithFallback() {
-    try {
-      return primaryDataSource.get().getConnection();
-    } catch (final SQLException e) {
-      if (authErrorDetector.isAuthError(e) && isOverlapActive()) {
-        logger.log(INFO, "Primary auth failed, trying secondary during overlap");
-        try {
-          return secondaryDataSource.get().getConnection();
-        } catch (final SQLException secondaryException) {
-          throw new RuntimeException(secondaryException);
-        }
-      }
-      throw new RuntimeException(e);
-    }
-  }
-
   public void reset() {
     if (!isRefreshing.compareAndSet(false, true)) {
       logger.log(DEBUG, "Reset already in progress, skipping");
@@ -396,47 +380,6 @@ public class RotatingDataSource implements DataSource {
     }
   }
 
-  private void checkAndRefresh() {
-    try {
-      final var latestVersionId = SecretHelper.getSecretVersion(secretId);
-      if (!latestVersionId.equals(cachedVersionId.get())) {
-        logger.log(INFO, "Secret version changed, refreshing DataSource");
-        reset();
-      }
-    } catch (final Exception e) {
-      logger.log(WARNING, "Failed to check secret version", e);
-    }
-  }
-
-  private void checkLatestVersionAndRefreshIfNeeded() {
-    try {
-      final var latest = SecretHelper.getSecretVersion(secretId);
-      final var current = cachedVersionId.get();
-      if (!latest.equals(current)) {
-        logger.log(DEBUG, "Detected new secret version during connection acquisition");
-        reset();
-      }
-    } catch (final Exception e) {
-      logger.log(WARNING, "Version check failed during connection acquisition", e);
-    }
-  }
-
-  private DataSource createDataSource() {
-    final var versionId = SecretHelper.getSecretVersion(secretId);
-    cachedVersionId.set(versionId);
-    return Optional.of(secretId).map(SecretHelper::getDbSecret).map(factory::create).orElseThrow();
-  }
-
-  private void closeDataSource(final DataSource ds) {
-    if (ds instanceof AutoCloseable ac) {
-      try {
-        ac.close();
-      } catch (final Exception e) {
-        logger.log(WARNING, "Failed to close DataSource", e);
-      }
-    }
-  }
-
   public void shutdown() {
     if (scheduler != null) {
       scheduler.shutdown();
@@ -502,5 +445,62 @@ public class RotatingDataSource implements DataSource {
 
   public Optional<Instant> getOverlapExpiresAt() {
     return Optional.ofNullable(secondaryExpiresAt.get());
+  }
+
+  private Connection tryGetConnectionWithFallback() {
+    try {
+      return primaryDataSource.get().getConnection();
+    } catch (final SQLException e) {
+      if (authErrorDetector.isAuthError(e) && isOverlapActive()) {
+        logger.log(INFO, "Primary auth failed, trying secondary during overlap");
+        try {
+          return secondaryDataSource.get().getConnection();
+        } catch (final SQLException secondaryException) {
+          throw new RuntimeException(secondaryException);
+        }
+      }
+      throw new RuntimeException(e);
+    }
+  }
+
+  private void checkAndRefresh() {
+    try {
+      final var latestVersionId = SecretHelper.getSecretVersion(secretId);
+      if (!latestVersionId.equals(cachedVersionId.get())) {
+        logger.log(INFO, "Secret version changed, refreshing DataSource");
+        reset();
+      }
+    } catch (final Exception e) {
+      logger.log(WARNING, "Failed to check secret version", e);
+    }
+  }
+
+  private void checkLatestVersionAndRefreshIfNeeded() {
+    try {
+      final var latest = SecretHelper.getSecretVersion(secretId);
+      final var current = cachedVersionId.get();
+      if (!latest.equals(current)) {
+        logger.log(DEBUG, "Detected new secret version during connection acquisition");
+        reset();
+      }
+    } catch (final Exception e) {
+      logger.log(WARNING, "Version check failed during connection acquisition", e);
+    }
+  }
+
+  private DataSource createDataSource() {
+    final var versionId = SecretHelper.getSecretVersion(secretId);
+    cachedVersionId.set(versionId);
+    return Optional.of(secretId).map(SecretHelper::getDbSecret).map(factory::create).orElseThrow();
+  }
+
+  private void closeDataSource(final DataSource ds) {
+    if (ds instanceof AutoCloseable ac) {
+      try {
+        ac.close();
+      } catch (final Exception e) {
+        logger.log(WARNING, "Failed to close DataSource", e);
+      }
+    }
   }
 }
