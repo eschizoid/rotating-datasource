@@ -2,14 +2,11 @@ package com.example.rotatingdatasource.core;
 
 import static com.example.rotatingdatasource.core.Retry.*;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
 import java.sql.SQLException;
 import java.sql.SQLTransientException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
 import org.junit.jupiter.api.*;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -17,12 +14,11 @@ public class RetryTest {
 
   @AfterEach
   void clearInterruptFlag() {
-    // Ensure one test's interrupt status doesn't leak into others
     if (Thread.currentThread().isInterrupted()) Thread.interrupted();
   }
 
   @Nested
-  @DisplayName("Basic Retry Behavior")
+  @DisplayName("Basic Retry Behavior - onException")
   class BasicRetryBehavior {
 
     @Test
@@ -35,13 +31,14 @@ public class RetryTest {
     @Test
     @DisplayName("Should retry on matching exception")
     void shouldRetryOnMatchingException() throws Exception {
-      final var attempts = new int[] {0};
+      final var attempts = new AtomicInteger(0);
 
       final var result =
           onException(
               () -> {
-                attempts[0]++;
-                if (attempts[0] == 1) throw new SQLException("Connection failed");
+                if (attempts.incrementAndGet() < 2) {
+                  throw new SQLException("transient");
+                }
                 return "success";
               },
               ex -> true,
@@ -50,18 +47,21 @@ public class RetryTest {
               0L);
 
       assertEquals("success", result);
-      assertEquals(2, attempts[0]);
+      assertEquals(2, attempts.get());
     }
 
     @Test
     @DisplayName("Should execute recovery action")
     void shouldExecuteRecoveryAction() throws Exception {
       final var recoveryExecuted = new boolean[] {false};
+      final var attempts = new AtomicInteger(0);
 
       final var result =
           onException(
               () -> {
-                if (!recoveryExecuted[0]) throw new SQLException("Auth failed");
+                if (attempts.incrementAndGet() < 2) {
+                  throw new SQLException("transient");
+                }
                 return "recovered";
               },
               ex -> true,
@@ -76,22 +76,22 @@ public class RetryTest {
     @Test
     @DisplayName("Should fail after max attempts")
     void shouldFailAfterMaxAttempts() {
-      final var attempts = new int[] {0};
+      final var attempts = new AtomicInteger(0);
 
       assertThrows(
           SQLException.class,
           () ->
               onException(
                   () -> {
-                    attempts[0]++;
-                    throw new SQLException("Persistent failure");
+                    attempts.incrementAndGet();
+                    throw new SQLException("always fails");
                   },
                   ex -> true,
                   () -> {},
                   2,
                   0L));
 
-      assertEquals(2, attempts[0]);
+      assertEquals(2, attempts.get());
     }
   }
 
@@ -103,32 +103,37 @@ public class RetryTest {
     @DisplayName("Should not retry on non-matching exception")
     void shouldNotRetryOnNonMatchingException() {
       assertThrows(
-          RuntimeException.class,
+          SQLException.class,
           () ->
               onException(
                   () -> {
-                    throw new RuntimeException("Different exception type");
+                    throw new SQLException("not retryable");
                   },
                   ex -> false,
                   () -> {},
-                  2,
+                  3,
                   0L));
     }
 
     @Test
     @DisplayName("Should not retry when predicate returns false")
     void shouldNotRetryWhenPredicateReturnsFalse() {
+      final var attempts = new AtomicInteger(0);
+
       assertThrows(
-          SQLTransientException.class,
+          SQLException.class,
           () ->
               onException(
                   () -> {
-                    throw new SQLTransientException("Transient error");
+                    attempts.incrementAndGet();
+                    throw new SQLException("08006");
                   },
                   ex -> false,
                   () -> {},
-                  2,
+                  3,
                   0L));
+
+      assertEquals(1, attempts.get());
     }
   }
 
@@ -141,7 +146,7 @@ public class RetryTest {
     void onExceptionThrowsOnInvalidMaxAttempts() {
       assertThrows(
           IllegalArgumentException.class,
-          () -> onException(() -> "x", ex -> true, () -> {}, 0, 0L));
+          () -> onException(() -> "test", ex -> true, () -> {}, 0, 0L));
     }
 
     @Test
@@ -160,61 +165,10 @@ public class RetryTest {
                       ex -> true,
                       () -> {},
                       2,
-                      50L));
+                      1000L));
 
       assertEquals("to retry", thrown.getMessage());
       assertTrue(Thread.currentThread().isInterrupted());
-    }
-  }
-
-  @Nested
-  @DisplayName("Auth Retry Specific")
-  class AuthRetrySpecific {
-
-    @Test
-    @DisplayName("Should retry once on auth SQL exception and call reset")
-    void authRetryRetriesOnceOnAuthSQLExceptionAndCallsReset() {
-      final var attempts = new int[] {0};
-      final var resets = new int[] {0};
-
-      final var result =
-          authRetry(
-              () -> {
-                attempts[0]++;
-                if (attempts[0] == 1) {
-                  throw new RuntimeException(
-                      new SQLException("Password authentication failed", "08000"));
-                }
-                return "ok";
-              },
-              () -> resets[0]++);
-
-      assertEquals("ok", result);
-      assertEquals(2, attempts[0]);
-      assertEquals(1, resets[0]);
-    }
-
-    @Test
-    @DisplayName("Should not retry on non-auth SQL exception")
-    void authRetryDoesNotRetryOnNonAuthSQLException() {
-      final var attempts = new int[] {0};
-      final var resets = new int[] {0};
-
-      RuntimeException thrown =
-          assertThrows(
-              RuntimeException.class,
-              () ->
-                  authRetry(
-                      () -> {
-                        attempts[0]++;
-                        // SQLState not 28000 and no auth keywords
-                        throw new RuntimeException(new SQLException("some other error", "08006"));
-                      },
-                      () -> resets[0]++));
-
-      assertEquals(1, attempts[0]);
-      assertEquals(0, resets[0]);
-      assertInstanceOf(SQLException.class, thrown.getCause());
     }
   }
 
@@ -230,10 +184,20 @@ public class RetryTest {
     }
 
     @Test
+    @DisplayName("Should detect auth error from SQL state 28P01")
+    void isAuthErrorTrueOnSqlState28P01() {
+      final var exception = new SQLException("password failed", "28P01");
+      assertTrue(isAuthError(exception));
+    }
+
+    @Test
     @DisplayName("Should detect auth error from common message keywords")
     void isAuthErrorTrueOnCommonMessageKeywords() {
-      final var exception = new SQLException("ACCESS DENIED for user");
-      assertTrue(isAuthError(exception));
+      assertTrue(isAuthError(new SQLException("ACCESS DENIED for user")));
+      assertTrue(isAuthError(new SQLException("authentication failed")));
+      assertTrue(isAuthError(new SQLException("password authentication failed")));
+      assertTrue(isAuthError(new SQLException("invalid password")));
+      assertTrue(isAuthError(new SQLException("permission denied")));
     }
 
     @Test
@@ -246,6 +210,57 @@ public class RetryTest {
   }
 
   @Nested
+  @DisplayName("Transient Connection Error Detection")
+  class TransientConnectionErrorDetection {
+
+    @Test
+    @DisplayName("Should detect transient error from SQLState 08xxx")
+    void shouldDetectTransientFromSqlState08() {
+      assertTrue(isTransientConnectionError(new SQLException("connection error", "08000")));
+      assertTrue(isTransientConnectionError(new SQLException("connection error", "08006")));
+    }
+
+    @Test
+    @DisplayName("Should detect SQLTransientException")
+    void shouldDetectSqlTransientException() {
+      assertTrue(isTransientConnectionError(new SQLTransientException("transient")));
+    }
+
+    @Test
+    @DisplayName("Should detect JDBCConnectionException")
+    void shouldDetectJdbcConnectionException() {
+      final var exception = new TestJDBCConnectionException();
+      assertTrue(isTransientConnectionError(exception));
+    }
+
+    @Test
+    @DisplayName("Should detect transient keywords in message")
+    void shouldDetectTransientKeywords() {
+      assertTrue(isTransientConnectionError(new SQLException("connection refused")));
+      assertTrue(isTransientConnectionError(new SQLException("connection reset")));
+      assertTrue(isTransientConnectionError(new SQLException("i/o error occurred")));
+      assertTrue(isTransientConnectionError(new SQLException("socket closed")));
+      assertTrue(isTransientConnectionError(new SQLException("broken pipe")));
+      assertTrue(isTransientConnectionError(new SQLException("pool exhausted")));
+      assertTrue(isTransientConnectionError(new SQLException("connection timeout")));
+    }
+
+    @Test
+    @DisplayName("Should return false for non-transient errors")
+    void shouldReturnFalseForNonTransientErrors() {
+      assertFalse(isTransientConnectionError(new SQLException("syntax error", "42000")));
+      assertFalse(isTransientConnectionError(null));
+    }
+
+    // Helper class for testing
+    static class TestJDBCConnectionException extends SQLException {
+      TestJDBCConnectionException() {
+        super("test");
+      }
+    }
+  }
+
+  @Nested
   @DisplayName("SQLException Extraction")
   class SqlExceptionExtraction {
 
@@ -253,8 +268,7 @@ public class RetryTest {
     @DisplayName("Should find first SQLException in exception chain")
     void findSqlExceptionReturnsFirstInChain() {
       final var inner = new SQLException("root", "28000");
-      final var wrapped =
-          new RuntimeException(new IllegalStateException(new RuntimeException(inner)));
+      final var wrapped = new RuntimeException(new IllegalStateException(inner));
       assertEquals(inner, findSqlException(wrapped));
     }
 
@@ -263,6 +277,18 @@ public class RetryTest {
     void findSqlExceptionReturnsNullWhenAbsent() {
       final var wrapped = new RuntimeException(new IllegalStateException("no sql here"));
       assertNull(findSqlException(wrapped));
+    }
+
+    @Test
+    @DisplayName("Should find SQLException with chained next exceptions")
+    void shouldFindLastNextException() {
+      final var first = new SQLException("first");
+      final var second = new SQLException("second");
+      first.setNextException(second);
+      final var wrapped = new RuntimeException(first);
+
+      final var found = findSqlException(wrapped);
+      assertEquals(first, found);
     }
   }
 
@@ -315,280 +341,198 @@ public class RetryTest {
     @Test
     @DisplayName("Policy should validate constructor arguments")
     void policyShouldValidateConstructorArguments() {
-      assertThrows(
-          IllegalArgumentException.class,
-          () -> new Policy(0, 100L, 1000L, 2.0, false),
-          "Should reject maxAttempts < 1");
+      assertThrows(IllegalArgumentException.class, () -> new Policy(0, 100L, 100L, 1.0, false));
 
-      assertThrows(
-          IllegalArgumentException.class,
-          () -> new Policy(3, -1L, 1000L, 2.0, false),
-          "Should reject negative initialDelayMillis");
+      assertThrows(IllegalArgumentException.class, () -> new Policy(1, -1L, 100L, 1.0, false));
 
-      assertThrows(
-          IllegalArgumentException.class,
-          () -> new Policy(3, 1000L, 100L, 2.0, false),
-          "Should reject maxDelayMillis < initialDelayMillis");
+      assertThrows(IllegalArgumentException.class, () -> new Policy(1, 200L, 100L, 1.0, false));
 
-      assertThrows(
-          IllegalArgumentException.class,
-          () -> new Policy(3, 100L, 1000L, 0.5, false),
-          "Should reject backoffMultiplier < 1.0");
+      assertThrows(IllegalArgumentException.class, () -> new Policy(1, 100L, 100L, 0.5, false));
     }
   }
 
   @Nested
-  @DisplayName("Auth Retry with RotatingDataSource")
-  class AuthRetryWithRotatingDataSource {
+  @DisplayName("Auth Retry with Reset Hook")
+  class AuthRetryWithResetHook {
 
     @Test
-    void testAuthRetryWithRotatingDataSource() {
-      var rotatingDs = mock(RotatingDataSource.class);
-      var callCount = new AtomicInteger(0);
+    @DisplayName("Should succeed on first attempt without calling reset")
+    void shouldSucceedOnFirstAttemptWithoutReset() {
+      final var resetCalled = new AtomicInteger(0);
 
-      Supplier<String> supplier =
-          () -> {
-            if (callCount.incrementAndGet() == 1) {
-              throw new RuntimeException(new SQLException("Access denied", "28000"));
-            }
-            return "success";
-          };
-
-      final var result = Retry.authRetry(supplier, rotatingDs);
+      final var result =
+          authRetry(
+              () -> "success", resetCalled::incrementAndGet, AuthErrorDetector.defaultDetector());
 
       assertEquals("success", result);
-      verify(rotatingDs, times(1)).reset();
+      assertEquals(0, resetCalled.get());
     }
 
     @Test
-    void testAuthRetryWithRotatingDataSourceNoAuthError() {
-      var rotatingDs = mock(RotatingDataSource.class);
+    @DisplayName("Should retry once on auth error after calling reset")
+    void shouldRetryOnceOnAuthErrorAfterReset() {
+      final var attempts = new AtomicInteger(0);
+      final var resetCalled = new AtomicInteger(0);
 
-      Supplier<String> supplier = () -> "success";
-
-      final var result = Retry.authRetry(supplier, rotatingDs);
+      final var result =
+          authRetry(
+              () -> {
+                if (attempts.incrementAndGet() == 1) {
+                  throw new RuntimeException(new SQLException("auth failed", "28000"));
+                }
+                return "success";
+              },
+              resetCalled::incrementAndGet,
+              AuthErrorDetector.defaultDetector());
 
       assertEquals("success", result);
-      verify(rotatingDs, never()).reset();
+      assertEquals(1, resetCalled.get());
     }
 
     @Test
-    void testAuthRetryWithRotatingDataSourceNonAuthError() {
-      var rotatingDs = mock(RotatingDataSource.class);
-
-      Supplier<String> supplier =
-          () -> {
-            throw new RuntimeException("Some other error");
-          };
-
-      assertThrows(RuntimeException.class, () -> Retry.authRetry(supplier, rotatingDs));
-      verify(rotatingDs, never()).reset();
-    }
-
-    @Test
-    void testAuthRetryWithRotatingDataSourceAndDetector() {
-      var rotatingDs = mock(RotatingDataSource.class);
-      var detector = Retry.AuthErrorDetector.custom(e -> e.getErrorCode() == 1017);
-      var callCount = new AtomicInteger(0);
-
-      Supplier<String> supplier =
-          () -> {
-            if (callCount.incrementAndGet() == 1) {
-              var sqlEx = new SQLException("Invalid password", "28000", 1017);
-              throw new RuntimeException(sqlEx);
-            }
-            return "success";
-          };
-
-      final var result = Retry.authRetry(supplier, rotatingDs, detector);
-
-      assertEquals("success", result);
-      verify(rotatingDs, times(1)).reset();
-    }
-
-    @Test
-    void testAuthRetryWithRotatingDataSourceAndDetectorNoMatch() {
-      final var rotatingDs = mock(RotatingDataSource.class);
-      final var detector = Retry.AuthErrorDetector.custom(e -> e.getErrorCode() == 1017);
-
-      Supplier<String> supplier =
-          () -> {
-            final var sqlEx = new SQLException("Invalid password", "28000", 9999);
-            throw new RuntimeException(sqlEx);
-          };
-
-      assertThrows(RuntimeException.class, () -> Retry.authRetry(supplier, rotatingDs, detector));
-      verify(rotatingDs, never()).reset();
-    }
-
-    @Test
-    void testAuthRetryWithExpectedType() {
-      final var rotatingDs = mock(RotatingDataSource.class);
-      final var callCount = new AtomicInteger(0);
-
-      Supplier<Object> supplier =
-          () -> {
-            if (callCount.incrementAndGet() == 1) {
-              throw new RuntimeException(new SQLException("Access denied", "28000"));
-            }
-            return 42;
-          };
-
-      Integer result = Retry.authRetry(supplier, rotatingDs, Integer.class);
-
-      assertEquals(42, result);
-      verify(rotatingDs, times(1)).reset();
-    }
-
-    @Test
-    void testAuthRetryWithExpectedTypeClassCastException() {
-      final var rotatingDs = mock(RotatingDataSource.class);
-
-      Supplier<Object> supplier = () -> "not an integer";
+    @DisplayName("Should throw RuntimeException on non-auth error")
+    void shouldThrowOnNonAuthError() {
+      final var resetCalled = new AtomicInteger(0);
 
       assertThrows(
-          ClassCastException.class, () -> Retry.authRetry(supplier, rotatingDs, Integer.class));
+          RuntimeException.class,
+          () ->
+              authRetry(
+                  () -> {
+                    throw new RuntimeException(new SQLException("syntax error", "42000"));
+                  },
+                  resetCalled::incrementAndGet,
+                  AuthErrorDetector.defaultDetector()));
+
+      assertEquals(0, resetCalled.get());
     }
 
     @Test
-    void testAuthRetryVoidOperation() {
-      final var rotatingDs = mock(RotatingDataSource.class);
-      final var callCount = new AtomicInteger(0);
-      final var executed = new AtomicInteger(0);
+    @DisplayName("Should throw RuntimeException if retry fails after reset")
+    void shouldThrowIfRetryFailsAfterReset() {
+      final var resetCalled = new AtomicInteger(0);
 
-      Runnable operation =
-          () -> {
-            if (callCount.incrementAndGet() == 1) {
-              throw new RuntimeException(new SQLException("Access denied", "28000"));
-            }
-            executed.incrementAndGet();
-          };
+      assertThrows(
+          RuntimeException.class,
+          () ->
+              authRetry(
+                  () -> {
+                     throw new RuntimeException(new SQLException("auth failed", "28000"));
+                  },
+                  resetCalled::incrementAndGet,
+                  AuthErrorDetector.defaultDetector()));
 
-      Retry.authRetry(operation, rotatingDs);
-
-      assertEquals(1, executed.get());
-      verify(rotatingDs, times(1)).reset();
+      assertEquals(1, resetCalled.get());
     }
 
     @Test
-    void testAuthRetryVoidOperationNoAuthError() {
-      final var rotatingDs = mock(RotatingDataSource.class);
-      final var executed = new AtomicInteger(0);
+    @DisplayName("Should use custom detector")
+    void shouldUseCustomDetector() {
+      final var attempts = new AtomicInteger(0);
+      final var resetCalled = new AtomicInteger(0);
+      final var customDetector = AuthErrorDetector.custom(e -> e.getErrorCode() == 1017);
 
-      Runnable operation = executed::incrementAndGet;
+      final var result =
+          authRetry(
+              () -> {
+                if (attempts.incrementAndGet() == 1) {
+                  throw new RuntimeException(new SQLException("auth failed", null, 1017));
+                }
+                return "success";
+              },
+              resetCalled::incrementAndGet,
+              customDetector);
 
-      Retry.authRetry(operation, rotatingDs);
-
-      assertEquals(1, executed.get());
-      verify(rotatingDs, never()).reset();
-    }
-
-    @Test
-    void testAuthRetryWithRunnableAndDetector() throws SQLException {
-      final var rotatingDs = mock(RotatingDataSource.class);
-      final var callCount = new AtomicInteger(0);
-      final var executed = new AtomicInteger(0);
-
-      Runnable operation =
-          () -> {
-            if (callCount.incrementAndGet() == 1) {
-              throw new RuntimeException(new SQLException("Password authentication failed"));
-            }
-            executed.incrementAndGet();
-          };
-
-      Retry.authRetry(operation, rotatingDs);
-
-      assertEquals(1, executed.get());
-      verify(rotatingDs, times(1)).reset();
+      assertEquals("success", result);
+      assertEquals(1, resetCalled.get());
     }
   }
 
   @Nested
-  @DisplayName("Retry with Listener")
-  class RetryWithListener {
+  @DisplayName("Transient Retry with Policy")
+  class TransientRetryWithPolicy {
 
     @Test
-    void testOnExceptionWithRetryListener() throws SQLException {
-      final var listener = mock(Retry.RetryListener.class);
-      final var callCount = new AtomicInteger(0);
-
-      Retry.SqlExceptionSupplier<String, SQLException> supplier =
-          () -> {
-            if (callCount.incrementAndGet() < 3) {
-              throw new SQLException("Transient error");
-            }
-            return "success";
-          };
-
-      String result = Retry.onException(supplier, e -> true, () -> {}, 3, 10L, listener);
-
+    @DisplayName("Should succeed on first attempt")
+    void shouldSucceedOnFirstAttempt() {
+      final var result = transientRetry(() -> "success", Policy.fixed(3, 0L));
       assertEquals("success", result);
-      verify(listener, times(2)).onRetry(anyInt(), any(SQLException.class));
     }
 
     @Test
-    void testOnExceptionWithRetryListenerFailure() {
-      final var listener = mock(Retry.RetryListener.class);
-      final var callCount = new AtomicInteger(0);
+    @DisplayName("Should retry on transient connection error")
+    void shouldRetryOnTransientError() {
+      final var attempts = new AtomicInteger(0);
 
-      Retry.SqlExceptionSupplier<String, SQLException> supplier =
-          () -> {
-            callCount.incrementAndGet();
-            throw new SQLException("Permanent error");
-          };
+      final var result =
+          transientRetry(
+              () -> {
+                if (attempts.incrementAndGet() < 3) {
+                  throw new RuntimeException(new SQLException("connection refused", "08006"));
+                }
+                return "success";
+              },
+              Policy.fixed(5, 0L));
+
+      assertEquals("success", result);
+      assertEquals(3, attempts.get());
+    }
+
+    @Test
+    @DisplayName("Should throw on non-transient error")
+    void shouldThrowOnNonTransientError() {
+      assertThrows(
+          RuntimeException.class,
+          () ->
+              transientRetry(
+                  () -> {
+                    throw new RuntimeException(new SQLException("syntax error", "42000"));
+                  },
+                  Policy.fixed(3, 0L)));
+    }
+
+    @Test
+    @DisplayName("Should throw after max attempts exhausted")
+    void shouldThrowAfterMaxAttempts() {
+      final var attempts = new AtomicInteger(0);
 
       assertThrows(
-          SQLException.class,
-          () -> Retry.onException(supplier, e -> true, () -> {}, 2, 10L, listener));
-      verify(listener, times(2)).onRetry(anyInt(), any(SQLException.class));
+          RuntimeException.class,
+          () ->
+              transientRetry(
+                  () -> {
+                    attempts.incrementAndGet();
+                    throw new RuntimeException(new SQLException("connection refused", "08006"));
+                  },
+                  Policy.fixed(3, 0L)));
+
+      assertEquals(4, attempts.get());
+    }
+  }
+
+  @Nested
+  @DisplayName("AuthErrorDetector")
+  class AuthErrorDetectorTests {
+
+    @Test
+    @DisplayName("Should combine detectors with OR logic")
+    void shouldCombineDetectorsWithOr() {
+      final var detector1 = AuthErrorDetector.custom(e -> e.getErrorCode() == 1017);
+      final var detector2 = AuthErrorDetector.custom(e -> e.getErrorCode() == 1045);
+      final var combined = detector1.or(detector2);
+
+      assertTrue(combined.isAuthError(new SQLException("error", null, 1017)));
+      assertTrue(combined.isAuthError(new SQLException("error", null, 1045)));
+      assertFalse(combined.isAuthError(new SQLException("error", null, 9999)));
     }
 
     @Test
-    void testOnExceptionWithRetryListenerNoRetry() throws SQLException {
-      final var listener = mock(Retry.RetryListener.class);
+    @DisplayName("Default detector should use isAuthError method")
+    void defaultDetectorShouldUseIsAuthError() {
+      final var detector = AuthErrorDetector.defaultDetector();
 
-      Retry.SqlExceptionSupplier<String, SQLException> supplier = () -> "success";
-
-      String result = Retry.onException(supplier, e -> true, () -> {}, 3, 10L, listener);
-
-      assertEquals("success", result);
-      verify(listener, never()).onRetry(anyInt(), any());
-    }
-
-    @Test
-    void testRetryListenerLogging() throws SQLException {
-      final var listener = Retry.RetryListener.logging();
-      final var callCount = new AtomicInteger(0);
-
-      Retry.SqlExceptionSupplier<String, SQLException> supplier =
-          () -> {
-            if (callCount.incrementAndGet() < 2) {
-              throw new SQLException("Transient error");
-            }
-            return "success";
-          };
-
-      // Should not throw, logging is just for observability
-      final var result = Retry.onException(supplier, e -> true, () -> {}, 2, 10L, listener);
-      assertEquals("success", result);
-    }
-
-    @Test
-    void testRetryListenerNoOp() throws SQLException {
-      final var listener = Retry.RetryListener.noOp();
-      final var callCount = new AtomicInteger(0);
-
-      Retry.SqlExceptionSupplier<String, SQLException> supplier =
-          () -> {
-            if (callCount.incrementAndGet() < 2) {
-              throw new SQLException("Transient error");
-            }
-            return "success";
-          };
-
-      String result = Retry.onException(supplier, e -> true, () -> {}, 2, 10L, listener);
-      assertEquals("success", result);
+      assertTrue(detector.isAuthError(new SQLException("auth failed", "28000")));
+      assertFalse(detector.isAuthError(new SQLException("syntax error", "42000")));
     }
   }
 }

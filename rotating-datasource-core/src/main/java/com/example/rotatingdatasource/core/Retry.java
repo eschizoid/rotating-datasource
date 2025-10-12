@@ -10,31 +10,13 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
- * Functional retry helper for declaratively expressing retry-on-exception logic.
+ * Internal retry helper for {@link RotatingDataSource}.
  *
- * <p>Provides utilities for retrying SQL operations with configurable policies, auth error
- * detection, transient connection error handling, and observability hooks.
+ * <p>Provides retry logic for authentication failures and transient connection errors during
+ * credential rotation.
  *
- * <p><strong>Note:</strong> {@link RotatingDataSource} includes automatic retry logic for
- * connection acquisition. Direct use of this class is only needed for:
- *
- * <ul>
- *   <li>Custom retry scenarios beyond auth failures (e.g., deadlock retries)
- *   <li>Rare edge cases where credentials expire during long-running transactions
- *   <li>Application-level retry policies independent of connection acquisition
- * </ul>
- *
- * <h2>Basic Usage</h2>
- *
- * <pre>{@code
- * // Retry on serialization failures (custom scenario)
- * final var result = Retry.onException(
- *     () -> executeQuery(),
- *     e -> e.getSQLState().startsWith("40"),
- *     () -> System.out.println("Retrying..."),
- *     3, 100L
- * );
- * }</pre>
+ * <p><strong>This class is package-private and not intended for application use.</strong> {@link
+ * RotatingDataSource} handles all retry logic automatically. *
  *
  * <h2>RotatingDataSource Integration</h2>
  *
@@ -67,7 +49,6 @@ public final class Retry {
 
   private Retry() {}
 
-  // Lower-cased substrings that commonly indicate authentication problems in JDBC drivers
   private static final String[] AUTH_KEYWORDS =
       new String[] {
         "access denied",
@@ -77,7 +58,6 @@ public final class Retry {
         "permission denied"
       };
 
-  // Lower-cased substrings that commonly indicate transient connection/pool issues
   private static final String[] TRANSIENT_CONN_KEYWORDS =
       new String[] {
         "connection refused",
@@ -114,6 +94,7 @@ public final class Retry {
    */
   @FunctionalInterface
   public interface SqlExceptionSupplier<T, E extends SQLException> {
+
     /**
      * Supplies a value or throws a {@link SQLException}.
      *
@@ -124,62 +105,36 @@ public final class Retry {
   }
 
   /**
-   * Configuration for retry behavior supporting fixed delay and exponential backoff strategies.
+   * Retry policy defining attempt limits and backoff strategy.
    *
-   * <p>Immutable configuration object that defines retry behavior including maximum attempts, delay
-   * timing, backoff strategy, and optional jitter.
+   * <h3>Jitter Mechanics</h3>
    *
-   * <h3>Fixed Delay Strategy</h3>
+   * <p>When enabled, jitter adds randomness to prevent thundering herd:
    *
-   * <p>Retries with constant delay between attempts:
+   * <ul>
+   *   <li>Random multiplier between 0.75 and 1.25 (±25% variance)
+   *   <li>Example: 1000ms delay becomes 750ms-1250ms
+   *   <li>Spreads retry timing across multiple clients
+   * </ul>
    *
-   * <pre>{@code
-   * // Retry up to 3 times with 200ms delay between each attempt
-   * var policy = Policy.fixed(3, 200L);
-   *
-   * final var result = Retry.onException(
-   *     () -> executeQuery(),
-   *     e -> e.getSQLState().startsWith("40"),
-   *     () -> {},
-   *     policy
-   * );
-   * }</pre>
-   *
-   * <h3>Exponential Backoff Strategy</h3>
-   *
-   * <p>Retries with increasing delays, useful for transient failures:
+   * <h3>Examples</h3>
    *
    * <pre>{@code
-   * // Start at 100ms, double each attempt, max 30s, with jitter
-   * var policy = Policy.exponential(5, 100L);
-   * // Attempt 1: immediate
-   * // Attempt 2: ~100ms + jitter
-   * // Attempt 3: ~200ms + jitter
-   * // Attempt 4: ~400ms + jitter
-   * // Attempt 5: ~800ms + jitter
+   * // Fixed: exactly 500ms between attempts
+   * var fixed = Policy.fixed(3, 500L);
    *
-   * final var rotatingDs = new RotatingDataSource(secretId, factory, 0L, policy);
+   * // Exponential: 100ms, ~200ms, ~400ms with jitter
+   * var exponential = Policy.exponential(5, 100L);
+   *
+   * // Custom: capped at 10s with 3x multiplier
+   * var custom = new Policy(10, 100L, 10_000L, 3.0, true);
    * }</pre>
    *
-   * <h3>Custom Strategy</h3>
-   *
-   * <p>Full control over all retry parameters:
-   *
-   * <pre>{@code
-   * final var policy = new Policy(
-   *     10,      // max attempts
-   *     50L,     // initial delay
-   *     5000L,   // max delay cap
-   *     2.0,     // backoff multiplier
-   *     true     // add random jitter
-   * );
-   * }</pre>
-   *
-   * @param maxAttempts maximum number of attempts (including first), must be >= 1
-   * @param initialDelayMillis initial delay between retries in milliseconds, must be >= 0
-   * @param maxDelayMillis maximum delay cap for exponential backoff, must be >= initialDelayMillis
-   * @param backoffMultiplier multiplier for exponential backoff (1.0 = fixed delay), must be >= 1.0
-   * @param jitter whether to add random jitter (up to 25%) to delays
+   * @param maxAttempts total attempts (first + retries), must be ≥ 1
+   * @param initialDelayMillis starting delay, must be ≥ 0
+   * @param maxDelayMillis cap for exponential growth, must be ≥ initialDelayMillis
+   * @param backoffMultiplier growth factor (1.0 = fixed), must be ≥ 1.0
+   * @param jitter whether to add ±25% randomness to delays
    */
   public record Policy(
       int maxAttempts,
@@ -226,7 +181,7 @@ public final class Retry {
     /**
      * Creates an exponential backoff retry policy with jitter.
      *
-     * <p>Delays grow exponentially (2x) up to a maximum of 30 seconds, with 25% random jitter added
+     * <p>Delays grow exponentially (2x) up to a maximum of 60 seconds, with 25% random jitter added
      * to prevent thundering herd problems.
      *
      * <p>Example:
@@ -249,7 +204,7 @@ public final class Retry {
      * @return exponential backoff retry policy with jitter
      */
     public static Policy exponential(final int attempts, final long initialDelay) {
-      return new Policy(attempts, initialDelay, 45_000L, 2.0, true);
+      return new Policy(attempts, initialDelay, 60_000L, 2.0, true);
     }
 
     /**
@@ -680,6 +635,9 @@ public final class Retry {
       final Policy policy)
       throws E {
     var attempt = 0;
+    if (policy.maxAttempts() < 1) {
+      throw new IllegalArgumentException("policy.maxAttempts must be >= 1");
+    }
     while (true) {
       attempt++;
       try {
@@ -777,11 +735,11 @@ public final class Retry {
         @SuppressWarnings("unchecked")
         final E typedException = (E) ex;
 
-        listener.onRetry(attempt, typedException);
-
         if (!shouldRetry.test(typedException) || attempt >= maxAttempts) {
           throw typedException;
         }
+
+        listener.onRetry(attempt, typedException);
 
         LOGGER.log(DEBUG, "Attempt {0} failed, retrying with listener...", attempt);
         beforeRetry.run();
@@ -796,53 +754,6 @@ public final class Retry {
         }
       }
     }
-  }
-
-  /**
-   * Convenience method for ORM layers: runs an operation with automatic auth error retry.
-   *
-   * <p>If the operation fails with a RuntimeException containing an authentication-related
-   * SQLException, the rotating data source is reset and the operation is retried once.
-   *
-   * <h3>Hibernate Example</h3>
-   *
-   * <pre>{@code
-   * var users = Retry.authRetry(() -> {
-   *     try (var session = sessionFactory.openSession()) {
-   *         return session.createQuery("FROM User", User.class).list();
-   *     }
-   * }, rotatingDataSource);
-   * }</pre>
-   *
-   * <h3>JPA Example</h3>
-   *
-   * <pre>{@code
-   * final var orders = Retry.authRetry(
-   *     () -> entityManager
-   *         .createQuery("SELECT o FROM Order o WHERE o.status = :status", Order.class)
-   *         .setParameter("status", "PENDING")
-   *         .getResultList(),
-   *     rotatingDataSource
-   * );
-   * }</pre>
-   *
-   * <h3>Spring Data Example</h3>
-   *
-   * <pre>{@code
-   * Optional<User> user = Retry.authRetry(
-   *     () -> userRepository.findByEmail("user@example.com"),
-   *     rotatingDataSource
-   * );
-   * }</pre>
-   *
-   * @param <T> result type
-   * @param op operation to run
-   * @param rotating data source wrapper
-   * @return the operation result
-   * @throws RuntimeException if the operation fails after retry
-   */
-  public static <T> T authRetry(final Supplier<? extends T> op, final RotatingDataSource rotating) {
-    return authRetry(op, rotating::reset);
   }
 
   /**
@@ -887,145 +798,11 @@ public final class Retry {
    * @return the operation result
    * @throws RuntimeException if the operation fails after retry
    */
-  public static <T> T authRetry(
+  static <T> T authRetry(
       final Supplier<? extends T> op,
       final RotatingDataSource rotating,
       final AuthErrorDetector detector) {
     return authRetry(op, rotating::reset, detector);
-  }
-
-  /**
-   * Auth retry with explicit result type to avoid unchecked casts.
-   *
-   * <p>Useful when calling JPA/ORM APIs that return {@code Object} but you know the actual type.
-   *
-   * <h3>Native Query Example</h3>
-   *
-   * <pre>{@code
-   * final var timestamp = Retry.authRetry(
-   *     () -> entityManager
-   *         .createNativeQuery("SELECT now()")
-   *         .getSingleResult(),
-   *     rotatingDataSource,
-   *     Instant.class
-   * );
-   * }</pre>
-   *
-   * <h3>Stored Procedure Example</h3>
-   *
-   * <pre>{@code
-   * final var userId = Retry.authRetry(
-   *     () -> entityManager
-   *         .createStoredProcedureQuery("create_user")
-   *         .registerStoredProcedureParameter(1, String.class, ParameterMode.IN)
-   *         .registerStoredProcedureParameter(2, Integer.class, ParameterMode.OUT)
-   *         .setParameter(1, "john@example.com")
-   *         .execute()
-   *         .getOutputParameterValue(2),
-   *     rotatingDataSource,
-   *     Integer.class
-   * );
-   * }</pre>
-   *
-   * @param op the operation to run
-   * @param rotating rotating data source wrapper
-   * @param expectedType the expected result type token
-   * @param <T> expected result type
-   * @return the result cast to the expected type
-   * @throws RuntimeException if the operation fails after retry
-   * @throws ClassCastException if the result cannot be cast to the expected type
-   */
-  public static <T> T authRetry(
-      final Supplier<?> op, final RotatingDataSource rotating, final Class<T> expectedType) {
-    return expectedType.cast(authRetry(op, rotating::reset));
-  }
-
-  /**
-   * Void-returning auth retry for operations with side effects.
-   *
-   * <p>Useful for update, insert, delete operations that don't return values.
-   *
-   * <h3>Hibernate Example</h3>
-   *
-   * <pre>{@code
-   * Retry.authRetry(() -> {
-   *     try (var session = sessionFactory.openSession()) {
-   *         var tx = session.beginTransaction();
-   *         session.persist(newUser);
-   *         tx.commit();
-   *     }
-   * }, rotatingDataSource);
-   * }</pre>
-   *
-   * <h3>JPA Example</h3>
-   *
-   * <pre>{@code
-   * Retry.authRetry(() -> {
-   *     entityManager.getTransaction().begin();
-   *     entityManager.persist(newProduct);
-   *     entityManager.flush();
-   *     entityManager.getTransaction().commit();
-   * }, rotatingDataSource);
-   * }</pre>
-   *
-   * <h3>Spring @Transactional Example</h3>
-   *
-   * <pre>{@code
-   * @Transactional
-   * public void updateUser(Long id, String newEmail) {
-   *     Retry.authRetry(() -> {
-   *         User user = userRepository.findById(id).orElseThrow();
-   *         user.setEmail(newEmail);
-   *         userRepository.save(user);
-   *     }, rotatingDataSource);
-   * }
-   * }</pre>
-   *
-   * @param op operation to run
-   * @param rotating data source wrapper
-   */
-  public static void authRetry(final Runnable op, final RotatingDataSource rotating) {
-    authRetry(
-        (Supplier<Void>)
-            () -> {
-              op.run();
-              return null;
-            },
-        rotating);
-  }
-
-  /**
-   * Retries the given supplier on transient connection/pool errors using a default short policy.
-   *
-   * <p>Default policy: up to 3 attempts with 50ms delay between attempts.
-   *
-   * <p>Designed for ORM operations that may encounter transient connection issues during pool swaps
-   * or network hiccups.
-   *
-   * <h3>Hibernate Example</h3>
-   *
-   * <pre>{@code
-   * final var users = Retry.transientRetry(() -> {
-   *     try (var session = sessionFactory.openSession()) {
-   *         return session.createQuery("FROM User", User.class).list();
-   *     }
-   * });
-   * }</pre>
-   *
-   * <h3>JPA Example</h3>
-   *
-   * <pre>{@code
-   * final var product = Retry.transientRetry(() ->
-   *     entityManager.find(Product.class, productId)
-   * );
-   * }</pre>
-   *
-   * @param <T> result type
-   * @param op operation to execute
-   * @throws RuntimeException if all attempts fail
-   */
-  public static <T> void transientRetry(final Supplier<? extends T> op) {
-    transientRetry(op, Policy.fixed(3, 50L));
   }
 
   /**
@@ -1079,8 +856,8 @@ public final class Retry {
         final var sql = findSqlException(re);
         if (isTransientConnectionError(sql)) {
           final int nextAttempt = attempt + 1;
-          if (nextAttempt > policy.maxAttempts()) {
-            LOGGER.log(WARNING, "Transient error retry exhausted after {0} attempts", nextAttempt);
+          if (attempt >= policy.maxAttempts()) {
+            LOGGER.log(WARNING, "Transient error retry exhausted after {0} attempts", attempt);
             throw re;
           }
           final long delay = Math.min(policy.maxDelayMillis(), policy.calculateDelay(nextAttempt));
@@ -1104,52 +881,49 @@ public final class Retry {
     }
   }
 
-  /**
-   * Void-returning overload for transient retries.
-   *
-   * <p>Useful for write operations that don't return a value.
-   *
-   * <h3>Insert Example</h3>
-   *
-   * <pre>{@code
-   * Retry.transientRetry(() -> {
-   *     try (var session = sessionFactory.openSession()) {
-   *         var tx = session.beginTransaction();
-   *         session.persist(newUser);
-   *         tx.commit();
-   *     }
-   * });
-   * }</pre>
-   *
-   * <h3>Update Example</h3>
-   *
-   * <pre>{@code
-   * Retry.transientRetry(() -> {
-   *     try (var session = sessionFactory.openSession()) {
-   *         var tx = session.beginTransaction();
-   *         var user = session.get(User.class, userId);
-   *         user.setEmail(newEmail);
-   *         tx.commit();
-   *     }
-   * });
-   * }</pre>
-   *
-   * @param op operation to execute
-   * @throws RuntimeException if all attempts fail
-   */
-  static void transientRetry(final Runnable op) {
-    transientRetry(
-        (Supplier<Void>)
-            () -> {
-              op.run();
-              return null;
-            });
-  }
-
   static <T> T authRetry(final Supplier<? extends T> op, final Runnable reset) {
     return authRetry(op, reset, AuthErrorDetector.defaultDetector());
   }
 
+  /**
+   * Executes an operation with authentication error retry using custom detector.
+   *
+   * <p>If the operation throws a RuntimeException wrapping an authentication-related SQLException,
+   * the reset hook is executed and the operation is retried once.
+   *
+   * <h3>Custom Reset Hook Example</h3>
+   *
+   * <pre>{@code
+   * var result = Retry.authRetry(
+   *     () -> executeQuery(),
+   *     () -> connectionPool.evictAll(),  // Custom reset
+   *     AuthErrorDetector.custom(e -> e.getErrorCode() == 1017)
+   * );
+   * }</pre>
+   *
+   * <h3>Multiple Data Sources Example</h3>
+   *
+   * <pre>{@code
+   * var readResult = Retry.authRetry(
+   *     () -> readOnlyRepository.findAll(),
+   *     readOnlyDs::reset,
+   *     AuthErrorDetector.defaultDetector()
+   * );
+   *
+   * var writeResult = Retry.authRetry(
+   *     () -> primaryRepository.save(entity),
+   *     primaryDs::reset,
+   *     AuthErrorDetector.defaultDetector()
+   * );
+   * }</pre>
+   *
+   * @param op operation to execute
+   * @param reset callback to execute before retry (e.g., credential refresh)
+   * @param detector predicate for identifying authentication errors
+   * @param <T> result type
+   * @return operation result
+   * @throws RuntimeException if operation fails after retry or on non-auth errors
+   */
   static <T> T authRetry(
       final Supplier<? extends T> op, final Runnable reset, final AuthErrorDetector detector) {
     try {
@@ -1203,14 +977,13 @@ public final class Retry {
    * @param t the throwable to search
    * @return the first SQLException in the chain, or null if none found
    */
-  public static SQLException findSqlException(final Throwable t) {
+  static SQLException findSqlException(final Throwable t) {
     Throwable cur = t;
-    SQLException last = null;
     while (cur != null) {
-      if (cur instanceof SQLException se) last = se; // keep deepest SQLException
+      if (cur instanceof SQLException sql) return sql;
       cur = cur.getCause();
     }
-    return last;
+    return null;
   }
 
   /**
@@ -1264,70 +1037,56 @@ public final class Retry {
    * @param e the exception to check
    * @return true if the exception is an authentication error
    */
-  public static boolean isAuthError(final SQLException e) {
+  static boolean isAuthError(final SQLException e) {
     if (e == null) return false;
 
     final var state = e.getSQLState();
-
-    // Auth-specific SQLStates only
     final var isAuthState = "28000".equals(state) || "28P01".equals(state);
 
     final var msg = e.getMessage();
     if (msg != null) {
       final var lower = msg.toLowerCase(Locale.ROOT);
-      for (final var kw : AUTH_KEYWORDS) if (lower.contains(kw)) return true;
+      for (final var keyword : AUTH_KEYWORDS) if (lower.contains(keyword)) return true;
     }
 
     return isAuthState;
   }
 
   /**
-   * Detects transient connection/pool errors likely to recover on retry.
+   * Detects transient connection errors that warrant automatic retry.
    *
-   * <p>Heuristics used:
+   * <p>Identifies temporary failures that typically resolve quickly:
    *
    * <ul>
-   *   <li>SQLState class 08 (connection exception)
-   *   <li>Instance of {@code SQLTransientException} (includes {@code
-   *       SQLTransientConnectionException})
-   *   <li>Known transient keywords in message: "connection refused", "connection reset", "i/o
-   *       error", "socket closed", "broken pipe", "pool", "closed", "timeout"
+   *   <li>Connection timeouts (SQLState 08xxx)
+   *   <li>Network interruptions (connection refused/reset)
+   *   <li>Pool exhaustion
+   *   <li>SQLTransientException subclasses
    * </ul>
    *
-   * <h3>Basic Usage</h3>
+   * <h3>Usage in Custom Retry Logic</h3>
    *
    * <pre>{@code
    * try {
-   *     connection.createStatement().execute("SELECT 1");
+   *     return executeQuery();
    * } catch (SQLException e) {
    *     if (Retry.isTransientConnectionError(e)) {
-   *         System.out.println("Transient connection error, retrying...");
-   *         // retry logic
+   *         // Retry automatically
+   *         return executeQuery();
    *     }
+   *     throw e;  // Non-retryable error
    * }
    * }</pre>
    *
-   * <h3>Custom Retry Handler</h3>
-   *
-   * <pre>{@code
-   * final var result = Retry.onException(
-   *     () -> executeQuery(),
-   *     Retry::isTransientConnectionError,
-   *     () -> System.out.println("Connection issue, retrying..."),
-   *     5, 200L
-   * );
-   * }</pre>
-   *
-   * @param e the exception to check
-   * @return true if the exception is a transient connection error
+   * @param e the SQLException to check (null-safe)
+   * @return true if the error is transient and retryable
    */
-  public static boolean isTransientConnectionError(final SQLException e) {
+  static boolean isTransientConnectionError(final SQLException e) {
     if (e == null) return false;
 
     final var state = e.getSQLState();
     if (state != null && state.startsWith("08")) return true;
 
-    // Transient class hierarchy
     if (e instanceof SQLTransientException) return true;
 
     if (e.getClass().getSimpleName().contains("JDBCConnectionException")) return true;

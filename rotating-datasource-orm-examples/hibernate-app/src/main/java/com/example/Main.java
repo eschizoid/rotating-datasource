@@ -1,9 +1,11 @@
 package com.example;
 
 import com.example.rotatingdatasource.core.DataSourceFactory;
+import com.example.rotatingdatasource.core.Retry.Policy;
 import com.example.rotatingdatasource.core.RotatingDataSource;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import java.time.Duration;
 import org.hibernate.SessionFactory;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.cfg.Configuration;
@@ -39,6 +41,9 @@ public class Main {
               .secretId(secretId)
               .factory(hikariFactory())
               .refreshIntervalSeconds(0L)
+              .retryPolicy(Policy.exponential(10, 2_0000))
+              .gracePeriod(Duration.ofSeconds(60))
+              .overlapDuration(Duration.ofMinutes(15))
               .build();
       Runtime.getRuntime().addShutdownHook(new Thread(Main::shutdownRotating));
     }

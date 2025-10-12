@@ -576,6 +576,7 @@ public class RotatingDataSourceIntegrationTest {
       cfg.setMaximumPoolSize(5);
       cfg.setPoolName("rotating-ds-it");
       cfg.setConnectionTimeout(Duration.ofSeconds(5).toMillis());
+      cfg.setInitializationFailTimeout(-1);
       return new HikariDataSource(cfg);
     };
   }
