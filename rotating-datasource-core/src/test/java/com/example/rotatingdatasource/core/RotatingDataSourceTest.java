@@ -60,39 +60,6 @@ class RotatingDataSourceTest {
   }
 
   @Test
-  void testGetConnectionWithUsernameAndPassword() throws SQLException {
-    when(mockDataSource.getConnection("testuser", "testpass")).thenReturn(mockConnection);
-
-    final var rotatingDs =
-        RotatingDataSource.builder()
-            .secretId("test-secret")
-            .factory(secret -> mockDataSource)
-            .build();
-    final var conn = rotatingDs.getConnection("testuser", "testpass");
-
-    assertThat(conn).isNotNull();
-    verify(mockDataSource).getConnection("testuser", "testpass");
-  }
-
-  @Test
-  void testGetConnectionWithUsernamePasswordRetriesOnAuthError() throws SQLException {
-    final var authError = new SQLException("Access denied", "28000");
-    when(mockDataSource.getConnection("testuser", "testpass"))
-        .thenThrow(authError)
-        .thenReturn(mockConnection);
-
-    final var rotatingDs =
-        RotatingDataSource.builder()
-            .secretId("test-secret")
-            .factory(secret -> mockDataSource)
-            .build();
-    final var conn = rotatingDs.getConnection("testuser", "testpass");
-
-    assertThat(conn).isNotNull();
-    verify(mockDataSource, times(2)).getConnection("testuser", "testpass");
-  }
-
-  @Test
   void testSetLogWriter() throws SQLException {
     final var writer = new PrintWriter(System.out);
     final var rotatingDs =

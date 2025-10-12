@@ -1,7 +1,9 @@
 package com.example.rotatingdatasource.core;
 
+import static com.example.rotatingdatasource.core.Retry.*;
 import static java.lang.System.Logger.Level.*;
 
+import com.example.rotatingdatasource.core.Retry.Policy;
 import java.io.PrintWriter;
 import java.lang.System.Logger;
 import java.sql.Connection;
@@ -92,7 +94,7 @@ public class RotatingDataSource implements DataSource {
 
   private final String secretId;
   private final DataSourceFactory factory;
-  private final Retry.AuthErrorDetector authErrorDetector;
+  private final AuthErrorDetector authErrorDetector;
   private final Duration overlapDuration;
   private final Duration gracePeriod;
 
@@ -169,8 +171,8 @@ public class RotatingDataSource implements DataSource {
     private String secretId;
     private DataSourceFactory factory;
     private long refreshIntervalSeconds = 0L;
-    private Retry.Policy retryPolicy = Retry.Policy.exponential(20, 15_000L);
-    private Retry.AuthErrorDetector authErrorDetector = Retry.AuthErrorDetector.defaultDetector();
+    private Policy retryPolicy = Policy.exponential(20, 15_000L);
+    private AuthErrorDetector authErrorDetector = AuthErrorDetector.defaultDetector();
     private Duration overlapDuration = Duration.ZERO;
     private Duration gracePeriod = Duration.ofSeconds(60);
 
@@ -222,7 +224,7 @@ public class RotatingDataSource implements DataSource {
      * @param retryPolicy the retry policy
      * @return this builder
      */
-    public Builder retryPolicy(final Retry.Policy retryPolicy) {
+    public Builder retryPolicy(final Policy retryPolicy) {
       this.retryPolicy = retryPolicy;
       return this;
     }
@@ -230,12 +232,12 @@ public class RotatingDataSource implements DataSource {
     /**
      * Sets the authentication error detector.
      *
-     * <p>Default: {@link Retry.AuthErrorDetector#defaultDetector()}
+     * <p>Default: {@link AuthErrorDetector#defaultDetector()}
      *
      * @param authErrorDetector custom auth error detection logic
      * @return this builder
      */
-    public Builder authErrorDetector(final Retry.AuthErrorDetector authErrorDetector) {
+    public Builder authErrorDetector(final AuthErrorDetector authErrorDetector) {
       this.authErrorDetector = authErrorDetector;
       return this;
     }
@@ -299,70 +301,30 @@ public class RotatingDataSource implements DataSource {
   public Connection getConnection() {
     checkLatestVersionAndRefreshIfNeeded();
 
-    return Retry.transientRetry(
-        () ->
-            Retry.authRetry(
-                () -> {
-                  try {
-                    return tryGetConnectionWithFallback();
-                  } catch (SQLException e) {
-                    throw new RuntimeException(e);
-                  }
-                },
-                this::reset,
-                authErrorDetector),
-        Retry.Policy.exponential(20, 5_000L));
+    return transientRetry(
+        () -> authRetry(this::tryGetConnectionWithFallback, this::reset, authErrorDetector),
+        Policy.exponential(20, 5_000L));
   }
 
   @Override
   public Connection getConnection(final String username, final String password) {
-    checkLatestVersionAndRefreshIfNeeded();
-
-    return Retry.transientRetry(
-        () ->
-            Retry.authRetry(
-                () -> {
-                  try {
-                    return tryGetConnectionWithFallback(username, password);
-                  } catch (SQLException e) {
-                    throw new RuntimeException(e);
-                  }
-                },
-                this::reset,
-                authErrorDetector),
-        Retry.Policy.exponential(20, 5_000L));
+    throw new UnsupportedOperationException(
+        "Credentials are managed at the pool level via DataSourceFactory");
   }
 
-  private Connection tryGetConnectionWithFallback() throws SQLException {
+  private Connection tryGetConnectionWithFallback() {
     try {
       return primaryDataSource.get().getConnection();
     } catch (final SQLException e) {
-      if (authErrorDetector.isAuthError(e)) {
-        final var secondary = secondaryDataSource.get();
-        final var expiresAt = secondaryExpiresAt.get();
-        if (secondary != null && expiresAt != null && Instant.now().isBefore(expiresAt)) {
-          logger.log(INFO, "Primary auth failed, trying secondary during overlap");
-          return secondary.getConnection();
+      if (authErrorDetector.isAuthError(e) && isOverlapActive()) {
+        logger.log(INFO, "Primary auth failed, trying secondary during overlap");
+        try {
+          return secondaryDataSource.get().getConnection();
+        } catch (final SQLException secondaryException) {
+          throw new RuntimeException(secondaryException);
         }
       }
-      throw e;
-    }
-  }
-
-  private Connection tryGetConnectionWithFallback(final String username, final String password)
-      throws SQLException {
-    try {
-      return primaryDataSource.get().getConnection(username, password);
-    } catch (final SQLException e) {
-      if (authErrorDetector.isAuthError(e)) {
-        final var secondary = secondaryDataSource.get();
-        final var expiresAt = secondaryExpiresAt.get();
-        if (secondary != null && expiresAt != null && Instant.now().isBefore(expiresAt)) {
-          logger.log(INFO, "Primary auth failed, trying secondary during overlap");
-          return secondary.getConnection(username, password);
-        }
-      }
-      throw e;
+      throw new RuntimeException(e);
     }
   }
 
