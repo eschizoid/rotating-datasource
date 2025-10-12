@@ -18,6 +18,8 @@
         <jackson.version>2.20.0</jackson.version>
         <junit.jupiter.version>5.13.4</junit.jupiter.version>
         <postgresql.version>42.7.7</postgresql.version>
+        <r2dbc.version>1.0.0.RELEASE</r2dbc.version>
+        <reactor.version>3.5.20</reactor.version>
         <mysql.version>9.3.0</mysql.version>
         <testcontainers.version>1.21.3</testcontainers.version>
     </properties>
@@ -44,6 +46,17 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sdk-core</artifactId>
             <version>${aws.sdk.version}</version>
+        </dependency>
+        <!-- rd2bc dependencies -->
+        <dependency>
+            <groupId>io.r2dbc</groupId>
+            <artifactId>r2dbc-spi</artifactId>
+            <version>${r2dbc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+            <version>${reactor.version}</version>
         </dependency>
 
         <!-- JUnit for testing -->
