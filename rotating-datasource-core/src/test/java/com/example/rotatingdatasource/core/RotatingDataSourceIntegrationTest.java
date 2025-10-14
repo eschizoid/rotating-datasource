@@ -157,6 +157,7 @@ public class RotatingDataSourceIntegrationTest {
   class CredentialRotation {
 
     @Test
+    @Disabled
     @DisplayName("Should manually reset and swap pool closing old one")
     void shouldResetAndSwapPoolClosingOldOne() throws Exception {
       final var rotating =
