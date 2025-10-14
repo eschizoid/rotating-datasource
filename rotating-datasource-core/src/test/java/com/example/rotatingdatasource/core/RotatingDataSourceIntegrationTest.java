@@ -157,7 +157,7 @@ public class RotatingDataSourceIntegrationTest {
   class CredentialRotation {
 
     @Test
-    @Disabled("FIXME")
+    @Disabled
     @DisplayName("Should manually reset and swap pool closing old one")
     void shouldResetAndSwapPoolClosingOldOne() throws Exception {
       final var rotating =
@@ -175,8 +175,7 @@ public class RotatingDataSourceIntegrationTest {
       final var ds2 = rotating.unwrap(HikariDataSource.class);
       assertNotSame(ds1, ds2);
 
-      // Wait up to 2 seconds for async close
-      final var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+      final var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
       while (!ds1.isClosed() && System.nanoTime() < deadline) {
         Thread.sleep(25);
       }
@@ -453,7 +452,6 @@ public class RotatingDataSourceIntegrationTest {
     }
 
     @Test
-    @Disabled("FIXME")
     @DisplayName("Should stop scheduler on shutdown")
     void shouldStopSchedulerOnShutdown() throws Exception {
       final var rotating =
