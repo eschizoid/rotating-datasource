@@ -14,7 +14,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.condition.DisabledIf;
 import org.mockito.MockedStatic;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -613,6 +612,8 @@ public class RotatingDataSourceTest {
               .build();
 
       rotatingDs.reset();
+      Thread.sleep(50);
+
       rotatingDs.shutdown();
 
       verify((AutoCloseable) primaryDataSource, times(1)).close();
@@ -637,7 +638,6 @@ public class RotatingDataSourceTest {
     }
 
     @Test
-    @Disabled
     @DisplayName("Should cancel pending cleanups on shutdown")
     void shouldCancelPendingCleanupsOnShutdown() {
       final var factory = mock(DataSourceFactory.class);

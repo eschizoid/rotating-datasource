@@ -338,7 +338,6 @@ public final class RotatingDataSource implements DataSource {
         throw new RuntimeException("Credential refresh failed", e);
       }
       primaryDataSource.set(newDs);
-      primaryDataSource.set(newDs);
 
       final var pendingGrace = pendingGracePeriodCleanup.getAndSet(null);
       if (pendingGrace != null && !pendingGrace.isDone()) {
@@ -414,6 +413,9 @@ public final class RotatingDataSource implements DataSource {
 
     closeDataSource(primaryDataSource.get());
     closeDataSource(secondaryDataSource.get());
+
+    secondaryDataSource.set(null);
+    secondaryExpiresAt.set(null);
   }
 
   @Override
