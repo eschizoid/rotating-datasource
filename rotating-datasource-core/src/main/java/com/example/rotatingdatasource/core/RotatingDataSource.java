@@ -347,9 +347,7 @@ public final class RotatingDataSource implements DataSource {
 
       if (!overlapDuration.isZero()) {
         final var previousSecondary = secondaryDataSource.getAndSet(oldDs);
-        if (previousSecondary != null) {
-          closeDataSource(previousSecondary);
-        }
+        if (previousSecondary != null) closeDataSource(previousSecondary);
 
         final var expiresAt = Instant.now().plus(overlapDuration);
         secondaryExpiresAt.set(expiresAt);
