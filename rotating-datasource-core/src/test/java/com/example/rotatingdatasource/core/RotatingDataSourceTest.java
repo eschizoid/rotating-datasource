@@ -556,15 +556,14 @@ public class RotatingDataSourceTest {
     }
 
     @Test
-    @Disabled
     @DisplayName("Should delegate unwrap to primary DataSource")
     void shouldDelegateUnwrap() throws SQLException {
       final var rotatingDs =
           RotatingDataSource.builder().secretId("test-secret").factory(mockFactory).build();
 
-      rotatingDs.unwrap(DataSource.class);
+      rotatingDs.unwrap(AutoCloseable.class);
 
-      verify(mockDataSource, times(1)).unwrap(DataSource.class);
+      verify(mockDataSource, times(1)).unwrap(AutoCloseable.class);
     }
 
     @Test
@@ -577,15 +576,14 @@ public class RotatingDataSourceTest {
     }
 
     @Test
-    @Disabled
     @DisplayName("Should delegate isWrapperFor to primary DataSource")
     void shouldDelegateIsWrapperFor() throws SQLException {
       final var rotatingDs =
           RotatingDataSource.builder().secretId("test-secret").factory(mockFactory).build();
 
-      rotatingDs.isWrapperFor(DataSource.class);
+      rotatingDs.isWrapperFor(AutoCloseable.class);
 
-      verify(mockDataSource, times(1)).isWrapperFor(DataSource.class);
+      verify(mockDataSource, times(1)).isWrapperFor(AutoCloseable.class);
     }
   }
 
