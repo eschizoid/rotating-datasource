@@ -288,7 +288,7 @@ public class HibernateMainIntegrationTest {
       final var startTime = Instant.now();
       final var stopFlag = new AtomicBoolean(false);
 
-      final var workerThreads = 10; // Moderate concurrency to keep test stable
+      final var workerThreads = 10;
       final var executor = newFixedThreadPool(workerThreads);
       final var errors = new ConcurrentLinkedQueue<Exception>();
       final var successfulOps = new AtomicInteger(0);
@@ -422,7 +422,7 @@ public class HibernateMainIntegrationTest {
 
       // Shutdown and wait for completion
       rotationScheduler.shutdownNow();
-      workerLatch.await(60, SECONDS); // best-effort wait for workers
+      workerLatch.await(60, SECONDS);
 
       executor.shutdown();
       executor.awaitTermination(15, SECONDS);
@@ -435,6 +435,7 @@ public class HibernateMainIntegrationTest {
           INFO,
           String.format(
               """
+
                                 ==============================================
                                 Test Results Summary:
                                 ==============================================
