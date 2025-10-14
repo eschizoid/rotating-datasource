@@ -139,7 +139,7 @@ public class RotatingDataSourceIntegrationTest {
       final var rotating =
           RotatingDataSource.builder().secretId(SECRET_ID).factory(hikariFactory()).build();
 
-      assertDoesNotThrow(() -> rotating.getLoginTimeout());
+      assertDoesNotThrow(rotating::getLoginTimeout);
       assertDoesNotThrow(() -> rotating.setLoginTimeout(30));
       assertTrue(rotating.isWrapperFor(HikariDataSource.class));
       assertNotNull(rotating.unwrap(HikariDataSource.class));
@@ -157,7 +157,6 @@ public class RotatingDataSourceIntegrationTest {
   class CredentialRotation {
 
     @Test
-    @Disabled
     @DisplayName("Should manually reset and swap pool closing old one")
     void shouldResetAndSwapPoolClosingOldOne() throws Exception {
       final var rotating =
@@ -165,6 +164,7 @@ public class RotatingDataSourceIntegrationTest {
               .secretId(SECRET_ID)
               .factory(hikariFactory())
               .gracePeriod(Duration.ofSeconds(1))
+              .overlapDuration(Duration.ofMillis(5_000))
               .build();
 
       final var ds1 = rotating.unwrap(HikariDataSource.class);
@@ -175,13 +175,10 @@ public class RotatingDataSourceIntegrationTest {
       final var ds2 = rotating.unwrap(HikariDataSource.class);
       assertNotSame(ds1, ds2);
 
-      final var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-      while (!ds1.isClosed() && System.nanoTime() < deadline) {
-        Thread.sleep(25);
-      }
+      Thread.sleep(5_000);
+
       assertTrue(ds1.isClosed(), "Old data source should be closed after reset");
 
-      // New one works
       try (final var conn = ds2.getConnection();
           final var st = conn.createStatement();
           final var rs = st.executeQuery("SELECT 1")) {
@@ -204,17 +201,14 @@ public class RotatingDataSourceIntegrationTest {
 
       final var ds1 = rotating.unwrap(HikariDataSource.class);
 
-      // Update secret to trigger version change
       smClient.updateSecret(
           r -> r.secretId(SECRET_ID).secretString(pgSecretJson(postgres, "new-pass-123")));
 
-      // Revert to working password
       Thread.sleep(500);
       smClient.updateSecret(
           r -> r.secretId(SECRET_ID).secretString(pgSecretJson(postgres, postgres.getPassword())));
 
-      // Wait for proactive refresh (up to 3 seconds)
-      Thread.sleep(3000);
+      Thread.sleep(3_000);
 
       final var ds2 = rotating.unwrap(HikariDataSource.class);
       assertNotSame(ds1, ds2, "Should have swapped to new DataSource after version change");
@@ -234,8 +228,7 @@ public class RotatingDataSourceIntegrationTest {
 
       final var ds1 = rotating.unwrap(HikariDataSource.class);
 
-      // Wait for multiple refresh intervals without changing secret
-      Thread.sleep(3000);
+      Thread.sleep(3_000);
 
       final var ds2 = rotating.unwrap(HikariDataSource.class);
       assertSame(ds1, ds2, "Should not swap DataSource when version unchanged");
@@ -461,27 +454,20 @@ public class RotatingDataSourceIntegrationTest {
               .refreshIntervalSeconds(1)
               .build();
 
-      // Capture the initial DataSource before shutdown
       final var dsBeforeShutdown = rotating.unwrap(HikariDataSource.class);
 
-      // Update secret to trigger version change
       smClient.updateSecret(
           r -> r.secretId(SECRET_ID).secretString(pgSecretJson(postgres, postgres.getPassword())));
 
-      // Wait for one refresh cycle
-      Thread.sleep(2000);
+      Thread.sleep(2_000);
 
       rotating.shutdown();
 
-      // Update secret again after shutdown
       smClient.updateSecret(
           r -> r.secretId(SECRET_ID).secretString(pgSecretJson(postgres, postgres.getPassword())));
 
-      // Wait for what would be multiple refresh cycles
-      Thread.sleep(3000);
+      Thread.sleep(3_000);
 
-      // The DataSource captured before shutdown should still be closed
-      // (scheduler stopped, so no new instance created)
       assertTrue(dsBeforeShutdown.isClosed(), "Scheduler should be stopped after shutdown");
     }
 
