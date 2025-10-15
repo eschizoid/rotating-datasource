@@ -89,7 +89,8 @@ public class DbClientIT {
                 assertTrue(rs.next());
                 return rs.getInt(1);
               }
-            });
+            },
+            Retry.Policy.fixed(2, 1_000));
 
     assertEquals(42, result);
   }
@@ -108,7 +109,8 @@ public class DbClientIT {
                 rs.next();
                 return rs.getInt(1);
               }
-            });
+            },
+            Retry.Policy.fixed(2, 1_000));
     assertEquals(1, before);
 
     // Simulate password rotation by updating secret
@@ -136,7 +138,8 @@ public class DbClientIT {
                 rs.next();
                 return rs.getInt(1);
               }
-            });
+            },
+            Retry.Policy.fixed(2, 1_000));
     assertEquals(2, after);
   }
 
@@ -152,7 +155,8 @@ public class DbClientIT {
                 throw new SQLException("password authentication failed for user", "28P01");
               }
               return "success";
-            });
+            },
+            Retry.Policy.fixed(2, 1_000));
 
     assertEquals("success", result);
     assertEquals(2, attemptCounter.get());

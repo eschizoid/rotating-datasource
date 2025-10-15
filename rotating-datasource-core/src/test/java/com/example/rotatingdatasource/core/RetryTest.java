@@ -26,7 +26,8 @@ public class RetryTest {
     @Test
     @DisplayName("Should succeed on first attempt")
     void shouldSucceedOnFirstAttempt() throws Exception {
-      final var result = onException(() -> "success", ex -> true, () -> {}, 1, 0L);
+      final var result =
+          onException(() -> "success", ex -> true, () -> {}, Retry.Policy.fixed(1, 0));
       assertEquals("success", result);
     }
 
@@ -45,8 +46,7 @@ public class RetryTest {
               },
               ex -> true,
               () -> {},
-              2,
-              0L);
+              Retry.Policy.fixed(2, 0));
 
       assertEquals("success", result);
       assertEquals(2, attempts.get());
@@ -68,8 +68,7 @@ public class RetryTest {
               },
               ex -> true,
               () -> recoveryExecuted[0] = true,
-              2,
-              0L);
+              Retry.Policy.fixed(2, 0));
 
       assertEquals("recovered", result);
       assertTrue(recoveryExecuted[0]);
@@ -90,8 +89,7 @@ public class RetryTest {
                   },
                   ex -> true,
                   () -> {},
-                  2,
-                  0L));
+                  Retry.Policy.fixed(2, 0)));
 
       assertEquals(2, attempts.get());
     }
@@ -113,8 +111,7 @@ public class RetryTest {
                   },
                   ex -> false,
                   () -> {},
-                  3,
-                  0L));
+                  Retry.Policy.fixed(3, 0)));
     }
 
     @Test
@@ -132,8 +129,7 @@ public class RetryTest {
                   },
                   ex -> false,
                   () -> {},
-                  3,
-                  0L));
+                  Retry.Policy.fixed(3, 0)));
 
       assertEquals(1, attempts.get());
     }
@@ -148,7 +144,7 @@ public class RetryTest {
     void onExceptionThrowsOnInvalidMaxAttempts() {
       assertThrows(
           IllegalArgumentException.class,
-          () -> onException(() -> "test", ex -> true, () -> {}, 0, 0L));
+          () -> onException(() -> "test", ex -> true, () -> {}, Retry.Policy.fixed(0, 0)));
     }
 
     @Test
@@ -166,8 +162,7 @@ public class RetryTest {
                       },
                       ex -> true,
                       () -> {},
-                      2,
-                      1000L));
+                      Retry.Policy.fixed(2, 1_000)));
 
       assertEquals("to retry", thrown.getMessage());
       assertTrue(Thread.currentThread().isInterrupted());

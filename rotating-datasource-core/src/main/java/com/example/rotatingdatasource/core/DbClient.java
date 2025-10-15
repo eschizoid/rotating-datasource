@@ -1,9 +1,7 @@
 package com.example.rotatingdatasource.core;
 
-import com.example.rotatingdatasource.core.Retry.SqlExceptionSupplier;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.function.Predicate;
 
 /**
  * Thin database client that executes operations using a {@link RotatingDataSource} and retries once
@@ -19,14 +17,15 @@ public record DbClient(RotatingDataSource rotatingDataSource) {
    * to pick up fresh credentials.
    *
    * @param operation the database operation to run with an open {@link Connection}
+   * @param policy retry policy configuration
    * @param <T> the operation result type
    * @return the value returned by the operation
    * @throws SQLException if the operation fails (after retry if applicable)
    */
-  public <T> T executeWithRetry(final DbOperation<T> operation) throws SQLException {
-    final SqlExceptionSupplier<T, SQLException> supplier = () -> run(operation);
-    final Predicate<SQLException> shouldRetry = Retry::isAuthError;
-    return Retry.onException(supplier, shouldRetry, rotatingDataSource::reset, 2, 0L);
+  public <T> T executeWithRetry(final DbOperation<T> operation, final Retry.Policy policy)
+      throws SQLException {
+    return Retry.onException(
+        () -> run(operation), Retry::isAuthError, rotatingDataSource::reset, policy);
   }
 
   /**

@@ -4,6 +4,7 @@ import static java.lang.System.Logger.Level.DEBUG;
 
 import com.example.rotatingdatasource.core.DataSourceFactory;
 import com.example.rotatingdatasource.core.DbClient;
+import com.example.rotatingdatasource.core.Retry;
 import com.example.rotatingdatasource.core.RotatingDataSource;
 import java.sql.SQLException;
 
@@ -72,7 +73,8 @@ public class App {
             rs.next();
             return rs.getString(1);
           }
-        });
+        },
+        Retry.Policy.fixed(2, 1_000));
   }
 
   /**
