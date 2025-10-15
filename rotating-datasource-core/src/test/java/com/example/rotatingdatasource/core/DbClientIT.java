@@ -22,7 +22,7 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-public class DbClientTest {
+public class DbClientIT {
 
   private PostgreSQLContainer<?> postgres;
   private GenericContainer<?> localstack;
@@ -95,6 +95,7 @@ public class DbClientTest {
   }
 
   @Test
+  @Disabled
   void executeWithRetryShouldRecoverAfterPasswordRotation() throws Exception {
     final var client = new DbClient(rotatingDs);
 

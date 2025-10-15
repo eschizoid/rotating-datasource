@@ -24,7 +24,7 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-public class RotatingDataSourceIntegrationTest {
+public class RotatingDataSourceIT {
 
   private PostgreSQLContainer<?> postgres;
   private GenericContainer<?> localstack;
