@@ -1,11 +1,21 @@
 package com.example;
 
+import static java.lang.System.Logger.Level.ERROR;
+import static java.lang.System.Logger.Level.INFO;
+import static java.util.concurrent.Executors.*;
+import static java.util.concurrent.TimeUnit.*;
+import static java.util.stream.Collectors.joining;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.example.rotatingdatasource.core.SecretsManagerProvider;
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 import org.testcontainers.DockerClientFactory;
@@ -21,6 +31,8 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class JpaMainIntegrationTest {
   private static final String SECRET_ID = "it/orm/jpa/secret";
+  private static final System.Logger LOGGER =
+      System.getLogger(JpaMainIntegrationTest.class.getName());
 
   private PostgreSQLContainer<?> postgres;
   private GenericContainer<?> localstack;
@@ -73,10 +85,6 @@ public class JpaMainIntegrationTest {
     if (postgres != null) postgres.stop();
   }
 
-  /**
-   * Verifies JPA wiring using the RotatingDataSource from Main by executing a simple "select now()"
-   * under auth-aware retry.
-   */
   @Test
   void mainWiringShouldExecuteSelectNow() {
     final var rotating = Main.rotatingDataSource(SECRET_ID);
@@ -85,17 +93,12 @@ public class JpaMainIntegrationTest {
         final var em = emf.createEntityManager()) {
 
       final var result = em.createNativeQuery("SELECT now()", Instant.class).getSingleResult();
-
       assertNotNull(result);
     } finally {
       Main.shutdownRotating();
     }
   }
 
-  /**
-   * Verifies that RotatingDataSource's built-in retry handles authentication errors transparently
-   * when credentials are rotated. The pool automatically detects auth failures and refreshes.
-   */
   @Test
   void shouldHandleAuthFailureWithRepositoryAfterBadCredentials() throws Exception {
     final var rotating = Main.rotatingDataSource(SECRET_ID);
@@ -103,11 +106,9 @@ public class JpaMainIntegrationTest {
     try (final var emf = Main.buildEmf(rotating);
         final var em = emf.createEntityManager()) {
 
-      // Sanity check first query works
       final var before = em.createNativeQuery("SELECT now()", Instant.class).getSingleResult();
       assertNotNull(before);
 
-      // Change password in database first
       final var newPassword = "rotated_password";
       postgres.execInContainer(
           "psql",
@@ -116,15 +117,325 @@ public class JpaMainIntegrationTest {
           "-c",
           "ALTER USER " + postgres.getUsername() + " WITH PASSWORD '" + newPassword + "';");
 
-      // Update secret with new password BEFORE triggering retry
       smClient.updateSecret(r -> r.secretId(SECRET_ID).secretString(pgSecretJson(newPassword)));
       SecretsManagerProvider.resetCache();
 
-      // This query should transparently retry - RotatingDataSource.getConnection()
-      // detects auth error and automatically calls reset()
       final var after = em.createNativeQuery("SELECT now()", Instant.class).getSingleResult();
       assertNotNull(after);
 
+    } finally {
+      Main.shutdownRotating();
+    }
+  }
+
+  @Test
+  void shouldDrainInFlightConnectionsDuringConcurrentPoolSwap() throws Exception {
+    final var rotating = Main.rotatingDataSource(SECRET_ID);
+
+    try (final var emf = Main.buildEmf(rotating)) {
+      // Ensure table exists and seed a few rows
+      try (final var em = emf.createEntityManager()) {
+        em.getTransaction().begin();
+        em.createNativeQuery(
+                "CREATE TABLE IF NOT EXISTS test_users (id SERIAL PRIMARY KEY, username VARCHAR(255), email VARCHAR(255), updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            .executeUpdate();
+        for (int i = 0; i < 10; i++) {
+          em.createNativeQuery(
+                  "INSERT INTO test_users (username, email) VALUES (:username, :email) ON CONFLICT DO NOTHING")
+              .setParameter("username", "u" + i)
+              .setParameter("email", "u" + i + "@example.com")
+              .executeUpdate();
+        }
+        em.getTransaction().commit();
+      }
+
+      final int holders = 8;
+      final int workers = 8;
+      final var startLatch = new CountDownLatch(holders);
+      final var finishLatch = new CountDownLatch(holders);
+      final var successCount = new AtomicInteger(0);
+      final var errors = new ConcurrentLinkedQueue<Throwable>();
+
+      final var holderPool = newFixedThreadPool(holders);
+      for (int i = 0; i < holders; i++) {
+        holderPool.submit(
+            () -> {
+              try (final var em = emf.createEntityManager()) {
+                final var before =
+                    em.createNativeQuery("SELECT now()", Instant.class).getSingleResult();
+                assertNotNull(before);
+                startLatch.countDown();
+                Thread.sleep(1500);
+                final var after =
+                    em.createNativeQuery("SELECT now()", Instant.class).getSingleResult();
+                assertNotNull(after);
+                successCount.incrementAndGet();
+              } catch (final Throwable t) {
+                errors.add(t);
+              } finally {
+                finishLatch.countDown();
+              }
+            });
+      }
+
+      assertTrue(startLatch.await(10, SECONDS), "Holders should all be in-flight");
+
+      final var newPassword = "rotated_now%d".formatted(System.nanoTime());
+      postgres.execInContainer(
+          "psql",
+          "-U",
+          postgres.getUsername(),
+          "-c",
+          "ALTER USER %s WITH PASSWORD '%s';".formatted(postgres.getUsername(), newPassword));
+      smClient.updateSecret(r -> r.secretId(SECRET_ID).secretString(pgSecretJson(newPassword)));
+      SecretsManagerProvider.resetCache();
+
+      final var workerPool = newFixedThreadPool(workers);
+      final var workerStop = new AtomicBoolean(false);
+      final var workerErrors = new ConcurrentLinkedQueue<Throwable>();
+      for (int i = 0; i < workers; i++) {
+        final int w = i;
+        workerPool.submit(
+            () -> {
+              try {
+                while (!workerStop.get()) {
+                  try (final var em = emf.createEntityManager()) {
+                    em.createNativeQuery("SELECT now()", Instant.class).getSingleResult();
+                    em.getTransaction().begin();
+                    em.createNativeQuery("INSERT INTO test_users (username, email) VALUES (:u, :e)")
+                        .setParameter("u", "w%d_%d".formatted(w, System.nanoTime()))
+                        .setParameter("e", "w" + w + "@example.com")
+                        .executeUpdate();
+                    em.getTransaction().commit();
+                  }
+                  Thread.sleep(50);
+                }
+              } catch (final Throwable t) {
+                workerErrors.add(t);
+              }
+            });
+      }
+
+      assertTrue(finishLatch.await(60, SECONDS), "All holders should finish and commit");
+      workerStop.set(true);
+      workerPool.shutdown();
+      workerPool.awaitTermination(60, SECONDS);
+      holderPool.shutdown();
+      holderPool.awaitTermination(60, SECONDS);
+
+      assertTrue(
+          successCount.get() >= (int) Math.floor(holders * 0.75),
+          "Most in-flight sessions should keep working across rotation; successes=%d"
+              .formatted(successCount.get()));
+
+      if (!errors.isEmpty())
+        errors.forEach(t -> LOGGER.log(ERROR, String.format("Holder error: %s%n", t)));
+
+      if (!workerErrors.isEmpty())
+        workerErrors.forEach(t -> LOGGER.log(ERROR, String.format("Worker error: %s%n", t)));
+
+      assertTrue(errors.isEmpty(), "No holder errors expected during swap: %s".formatted(errors));
+      assertTrue(
+          workerErrors.isEmpty(),
+          "No worker errors expected during swap: %s".formatted(workerErrors));
+    } finally {
+      Main.shutdownRotating();
+    }
+  }
+
+  @Test
+  void shouldHandlePasswordRotationsUnderConcurrentLoadFor20seconds() throws Exception {
+    final var rotating = Main.rotatingDataSource(SECRET_ID);
+
+    try (final var emf = Main.buildEmf(rotating)) {
+      // Setup: Create test table and initial data
+      try (final var em = emf.createEntityManager()) {
+        em.getTransaction().begin();
+        em.createNativeQuery(
+                "CREATE TABLE IF NOT EXISTS test_users (id SERIAL PRIMARY KEY, username VARCHAR(255), email VARCHAR(255), updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            .executeUpdate();
+        for (int i = 0; i < 100; i++) {
+          em.createNativeQuery(
+                  "INSERT INTO test_users (username, email) VALUES (:username, :email)")
+              .setParameter("username", "user" + i)
+              .setParameter("email", "user" + i + "@example.com")
+              .executeUpdate();
+        }
+        em.getTransaction().commit();
+      }
+
+      final var testDuration = Duration.ofSeconds(20);
+      final var startTime = Instant.now();
+      final var stopFlag = new AtomicBoolean(false);
+
+      final var workerThreads = 10;
+      final var executor = newFixedThreadPool(workerThreads);
+      final var errors = new ConcurrentLinkedQueue<Exception>();
+      final var successfulOps = new AtomicInteger(0);
+      final var rotationCount = new AtomicInteger(0);
+
+      final var rotationScheduler = newSingleThreadScheduledExecutor();
+      rotationScheduler.scheduleAtFixedRate(
+          () -> {
+            if (stopFlag.get()) {
+              return;
+            }
+            try {
+              final var rotation = rotationCount.incrementAndGet();
+              final var newPassword = "rotated_pass_" + rotation;
+
+              LOGGER.log(
+                  INFO,
+                  String.format(
+                      "[%s] Password rotation %d: changing to '%s'%n",
+                      Instant.now(), rotation, newPassword));
+
+              postgres.execInContainer(
+                  "psql",
+                  "-U",
+                  postgres.getUsername(),
+                  "-c",
+                  "ALTER USER " + postgres.getUsername() + " WITH PASSWORD '" + newPassword + "';");
+
+              smClient.updateSecret(
+                  r -> r.secretId(SECRET_ID).secretString(pgSecretJson(newPassword)));
+              SecretsManagerProvider.resetCache();
+
+              LOGGER.log(
+                  INFO,
+                  String.format("[%s] Password rotation %d: completed%n", Instant.now(), rotation));
+
+            } catch (final Exception exception) {
+              LOGGER.log(
+                  ERROR,
+                  String.format(
+                      "[%s] Password rotation failed: %s%n",
+                      Instant.now(), exception.getMessage()));
+              errors.add(exception);
+            }
+          },
+          2_000,
+          10_000,
+          MILLISECONDS);
+
+      final var workerLatch = new CountDownLatch(workerThreads);
+      for (var i = 0; i < workerThreads; i++) {
+        final int workerId = i;
+        final var workloadType = i % 3;
+
+        executor.submit(
+            () -> {
+              try {
+                while (!stopFlag.get()) {
+                  try (final var em = emf.createEntityManager()) {
+                    switch (workloadType) {
+                      case 0 -> {
+                        var result =
+                            em.createNativeQuery(
+                                    "SELECT username, email FROM test_users WHERE id = :id")
+                                .setParameter("id", (workerId % 100) + 1)
+                                .getResultList();
+                        if (!result.isEmpty()) successfulOps.incrementAndGet();
+                      }
+                      case 1 -> {
+                        em.getTransaction().begin();
+                        var updated =
+                            em.createNativeQuery(
+                                    "UPDATE test_users SET email = :email, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
+                                .setParameter("email", "updated" + workerId + "@example.com")
+                                .setParameter("id", (workerId % 100) + 1)
+                                .executeUpdate();
+                        em.getTransaction().commit();
+                        if (updated > 0) successfulOps.incrementAndGet();
+                      }
+                      case 2 -> {
+                        em.getTransaction().begin();
+                        em.createNativeQuery(
+                                "INSERT INTO test_users (username, email) VALUES (:username, :email)")
+                            .setParameter(
+                                "username", "temp_%d_%d".formatted(workerId, System.nanoTime()))
+                            .setParameter("email", "temp" + workerId + "@example.com")
+                            .executeUpdate();
+                        em.createNativeQuery(
+                                "DELETE FROM test_users WHERE id IN (SELECT id FROM test_users WHERE username LIKE 'temp_%' ORDER BY id LIMIT 1)")
+                            .executeUpdate();
+                        em.getTransaction().commit();
+                        successfulOps.incrementAndGet();
+                      }
+                    }
+                    Thread.sleep(50 + (int) (Math.random() * 100));
+                  } catch (final Exception e) {
+                    errors.add(e);
+                  }
+                }
+              } finally {
+                workerLatch.countDown();
+              }
+            });
+      }
+
+      Thread.sleep(testDuration.toMillis());
+      stopFlag.set(true);
+
+      rotationScheduler.shutdownNow();
+      workerLatch.await(60, SECONDS);
+
+      executor.shutdown();
+      executor.awaitTermination(15, SECONDS);
+
+      final var endTime = Instant.now();
+      final var actualDuration = Duration.between(startTime, endTime);
+
+      LOGGER.log(
+          INFO,
+          String.format(
+              """
+                            ==============================================
+                            Test Results Summary:
+                            ==============================================
+                            Duration: %s seconds
+                            Password Rotations: %d
+                            Successful Operations: %d
+                            Errors: %d
+                            Operations per second: %.2f
+                            ==============================================
+                            """,
+              actualDuration.getSeconds(),
+              rotationCount.get(),
+              successfulOps.get(),
+              errors.size(),
+              successfulOps.get() / (double) actualDuration.getSeconds()));
+
+      if (!errors.isEmpty()) {
+        LOGGER.log(ERROR, "Errors encountered:");
+        errors.stream()
+            .limit(10)
+            .forEach(
+                e ->
+                    LOGGER.log(
+                        ERROR,
+                        String.format(
+                            "  - %s: %s%n", e.getClass().getSimpleName(), e.getMessage())));
+      }
+
+      try (final var em = emf.createEntityManager()) {
+        final var count =
+            ((Number) em.createNativeQuery("SELECT COUNT(*) FROM test_users").getSingleResult())
+                .intValue();
+        assertTrue(count >= 100, "Should have at least initial 100 records");
+      }
+
+      assertTrue(
+          actualDuration.getSeconds() >= 15 && actualDuration.getSeconds() <= 40,
+          "Test should run for ~20 seconds");
+      assertTrue(rotationCount.get() >= 1, "Should perform at least one password rotation");
+      assertTrue(
+          successfulOps.get() > 50,
+          "Should complete many operations successfully. Completed: " + successfulOps.get());
+      assertTrue(
+          errors.isEmpty(),
+          "No errors should occur during rotations with internal retry handling. Found: "
+              + errors.stream().map(Throwable::getMessage).collect(joining(", ")));
     } finally {
       Main.shutdownRotating();
     }

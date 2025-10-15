@@ -1,6 +1,7 @@
 package com.example.rotatingdatasource.core;
 
 import static com.example.rotatingdatasource.core.Retry.*;
+import static com.example.rotatingdatasource.core.Retry.Policy.exponential;
 import static java.lang.System.Logger.Level.*;
 
 import com.example.rotatingdatasource.core.Retry.Policy;
@@ -97,6 +98,7 @@ public final class RotatingDataSource implements DataSource {
   private final AuthErrorDetector authErrorDetector;
   private final Duration overlapDuration;
   private final Duration gracePeriod;
+  private final Retry.Policy retryPolicy;
 
   private final AtomicReference<DataSource> primaryDataSource = new AtomicReference<>();
   private final AtomicReference<DataSource> secondaryDataSource = new AtomicReference<>();
@@ -117,6 +119,7 @@ public final class RotatingDataSource implements DataSource {
     this.authErrorDetector = builder.authErrorDetector;
     this.overlapDuration = builder.overlapDuration;
     this.gracePeriod = builder.gracePeriod;
+    this.retryPolicy = builder.retryPolicy;
 
     primaryDataSource.set(createDataSource());
 
@@ -171,9 +174,9 @@ public final class RotatingDataSource implements DataSource {
     private String secretId;
     private DataSourceFactory factory;
     private long refreshIntervalSeconds = 0L;
-    private Policy retryPolicy = Policy.exponential(20, 15_000L);
+    private Policy retryPolicy = exponential(10, 1_000L);
     private AuthErrorDetector authErrorDetector = AuthErrorDetector.defaultDetector();
-    private Duration overlapDuration = Duration.ZERO;
+    private Duration overlapDuration = Duration.ofMinutes(15);
     private Duration gracePeriod = Duration.ofSeconds(60);
 
     private Builder() {}
@@ -277,8 +280,12 @@ public final class RotatingDataSource implements DataSource {
     /**
      * Builds the RotatingDataSource instance.
      *
+     * <p>Immediately fetches the secret and creates the initial DataSource. If the secret doesn't
+     * exist or the factory fails, this method throws.
+     *
      * @return configured RotatingDataSource
      * @throws IllegalStateException if required fields are not set
+     * @throws RuntimeException if initial DataSource creation fails
      */
     public RotatingDataSource build() {
       if (secretId == null || secretId.isBlank())
@@ -303,7 +310,7 @@ public final class RotatingDataSource implements DataSource {
 
     return transientRetry(
         () -> authRetry(this::tryGetConnectionWithFallback, this::reset, authErrorDetector),
-        Policy.exponential(20, 5_000L));
+        retryPolicy);
   }
 
   @Override
@@ -322,7 +329,14 @@ public final class RotatingDataSource implements DataSource {
       logger.log(INFO, "Refreshing credentials for secret: {0}", secretId);
 
       final var oldDs = primaryDataSource.get();
-      final var newDs = createDataSource();
+      final DataSource newDs;
+      try {
+        newDs = createDataSource();
+      } catch (final Exception e) {
+        logger.log(ERROR, "Failed to create new DataSource during reset", e);
+        isRefreshing.set(false);
+        throw new RuntimeException("Credential refresh failed", e);
+      }
       primaryDataSource.set(newDs);
 
       final var pendingGrace = pendingGracePeriodCleanup.getAndSet(null);
@@ -333,9 +347,7 @@ public final class RotatingDataSource implements DataSource {
 
       if (!overlapDuration.isZero()) {
         final var previousSecondary = secondaryDataSource.getAndSet(oldDs);
-        if (previousSecondary != null) {
-          closeDataSource(previousSecondary);
-        }
+        if (previousSecondary != null) closeDataSource(previousSecondary);
 
         final var expiresAt = Instant.now().plus(overlapDuration);
         secondaryExpiresAt.set(expiresAt);
@@ -364,7 +376,7 @@ public final class RotatingDataSource implements DataSource {
                     Thread.sleep(gracePeriod.toMillis());
                     closeDataSource(oldDs);
                     logger.log(INFO, "Closed old DataSource after grace period");
-                  } catch (InterruptedException ie) {
+                  } catch (final InterruptedException ie) {
                     Thread.currentThread().interrupt();
                   }
                 });
@@ -382,7 +394,7 @@ public final class RotatingDataSource implements DataSource {
 
   public void shutdown() {
     if (scheduler != null) {
-      scheduler.shutdown();
+      scheduler.shutdownNow();
       try {
         if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) scheduler.shutdownNow();
       } catch (final InterruptedException e) {
@@ -399,6 +411,9 @@ public final class RotatingDataSource implements DataSource {
 
     closeDataSource(primaryDataSource.get());
     closeDataSource(secondaryDataSource.get());
+
+    secondaryDataSource.set(null);
+    secondaryExpiresAt.set(null);
   }
 
   @Override
@@ -438,9 +453,11 @@ public final class RotatingDataSource implements DataSource {
   }
 
   public boolean isOverlapActive() {
-    final var secondary = secondaryDataSource.get();
     final var expiresAt = secondaryExpiresAt.get();
-    return secondary != null && expiresAt != null && Instant.now().isBefore(expiresAt);
+    if (expiresAt == null) return false;
+
+    final var isBeforeExpiration = Instant.now().isBefore(expiresAt);
+    return isBeforeExpiration && secondaryDataSource.get() != null;
   }
 
   public Optional<Instant> getOverlapExpiresAt() {

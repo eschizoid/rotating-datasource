@@ -30,6 +30,7 @@
         <postgresql.version>42.7.7</postgresql.version>
         <testcontainers.version>1.21.3</testcontainers.version>
         <tomcat.jdbc.version>11.0.11</tomcat.jdbc.version>
+        <c3p0.version>0.11.2</c3p0.version>
     </properties>
 
     <dependencyManagement>

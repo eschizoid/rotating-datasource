@@ -5,9 +5,10 @@ with tests that show automatic recovery from AWS Secrets Manager password rotati
 
 Submodules:
 
-- `hikaricp-app` — uses HikariCP
-- `tomcat-jdbc-app` — uses Apache Tomcat JDBC pool
+- `c3p0-app` — uses C3P0
 - `dbcp2-app` — uses Apache Commons DBCP2
+- `hikaricp-app` — uses HikariCP
+  - `tomcat-jdbc-app` — uses Apache Tomcat JDBC pool
 
 ## Requirements
 

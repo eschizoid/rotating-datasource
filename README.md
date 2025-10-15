@@ -10,9 +10,10 @@ for authentication failures.
 - **Built-in Retry Logic**: Automatic retry on authentication failures with configurable policies (fixed delay or
   exponential backoff)
 - **Custom Auth Error Detection**: Pluggable authentication error detection for vendor-specific error codes
+- **Retry Observability**: Optional listener interface for metrics and monitoring
 - **DbClient**: Thin JDBC client with automatic auth-failure retry
 - **Minimal Dependencies**: Only AWS SDK, Jackson, and a JDBC driver
-- **ORM-Friendly**: Works seamlessly with Hibernate, JPA, JOOQ, and Spring Data
+- **ORM-Friendly**: Works seamlessly with Hibernate, JPA, and Spring Data through `Retry.authRetry()`
 
 ## Quick Start
 

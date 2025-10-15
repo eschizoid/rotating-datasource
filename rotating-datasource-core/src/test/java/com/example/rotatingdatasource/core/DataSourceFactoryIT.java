@@ -17,7 +17,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
-public class DataSourceFactoryTest {
+public class DataSourceFactoryIT {
 
   enum DbPlatform {
     POSTGRES {

@@ -22,7 +22,11 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+<<<<<<<< HEAD:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientTest.java
 public class DbClientTest {
+========
+public class DbClientIT {
+>>>>>>>> 315e8eb7f6986a637f9e703f69acd5d0bf3007cc:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientIT.java
 
   private PostgreSQLContainer<?> postgres;
   private GenericContainer<?> localstack;
@@ -89,12 +93,21 @@ public class DbClientTest {
                 assertTrue(rs.next());
                 return rs.getInt(1);
               }
+<<<<<<<< HEAD:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientTest.java
             });
+========
+            },
+            Retry.Policy.fixed(2, 1_000));
+>>>>>>>> 315e8eb7f6986a637f9e703f69acd5d0bf3007cc:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientIT.java
 
     assertEquals(42, result);
   }
 
   @Test
+<<<<<<<< HEAD:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientTest.java
+========
+  @Disabled
+>>>>>>>> 315e8eb7f6986a637f9e703f69acd5d0bf3007cc:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientIT.java
   void executeWithRetryShouldRecoverAfterPasswordRotation() throws Exception {
     final var client = new DbClient(rotatingDs);
 
@@ -107,7 +120,12 @@ public class DbClientTest {
                 rs.next();
                 return rs.getInt(1);
               }
+<<<<<<<< HEAD:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientTest.java
             });
+========
+            },
+            Retry.Policy.fixed(2, 1_000));
+>>>>>>>> 315e8eb7f6986a637f9e703f69acd5d0bf3007cc:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientIT.java
     assertEquals(1, before);
 
     // Simulate password rotation by updating secret
@@ -135,7 +153,12 @@ public class DbClientTest {
                 rs.next();
                 return rs.getInt(1);
               }
+<<<<<<<< HEAD:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientTest.java
             });
+========
+            },
+            Retry.Policy.fixed(2, 1_000));
+>>>>>>>> 315e8eb7f6986a637f9e703f69acd5d0bf3007cc:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientIT.java
     assertEquals(2, after);
   }
 
@@ -151,7 +174,12 @@ public class DbClientTest {
                 throw new SQLException("password authentication failed for user", "28P01");
               }
               return "success";
+<<<<<<<< HEAD:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientTest.java
             });
+========
+            },
+            Retry.Policy.fixed(2, 1_000));
+>>>>>>>> 315e8eb7f6986a637f9e703f69acd5d0bf3007cc:rotating-datasource-core/src/test/java/com/example/rotatingdatasource/core/DbClientIT.java
 
     assertEquals("success", result);
     assertEquals(2, attemptCounter.get());

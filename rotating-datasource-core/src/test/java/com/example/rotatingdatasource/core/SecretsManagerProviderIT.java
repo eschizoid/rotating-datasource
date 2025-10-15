@@ -16,7 +16,7 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
-public class SecretsManagerProviderTest {
+public class SecretsManagerProviderIT {
 
   private static final String SECRET_ID = "test/secret";
   private static final String SECRET_VALUE =
