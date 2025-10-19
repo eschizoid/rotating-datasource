@@ -2,7 +2,7 @@ package com.example;
 
 import static java.lang.System.Logger.Level.DEBUG;
 
-import com.example.rotatingdatasource.core.DataSourceFactory;
+import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
 import com.example.rotatingdatasource.core.DbClient;
 import com.example.rotatingdatasource.core.Retry;
 import com.example.rotatingdatasource.core.RotatingDataSource;
@@ -19,7 +19,7 @@ public class App {
    * @param secretId the secret identifier to load from AWS Secrets Manager
    * @param factory a factory to create DataSources from secrets
    */
-  public App(final String secretId, final DataSourceFactory factory) {
+  public App(final String secretId, final DataSourceFactoryProvider factory) {
     this(secretId, factory, 0L);
   }
 
@@ -32,7 +32,7 @@ public class App {
    * @param refreshIntervalSeconds if > 0, enables proactive secret-version checks
    */
   public App(
-      final String secretId, final DataSourceFactory factory, final long refreshIntervalSeconds) {
+          final String secretId, final DataSourceFactoryProvider factory, final long refreshIntervalSeconds) {
     this.client =
         new DbClient(
             RotatingDataSource.builder()

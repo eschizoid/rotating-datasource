@@ -512,7 +512,7 @@ public class RotatingDataSourceIT {
     @Test
     @DisplayName("Should handle DataSource creation failure gracefully")
     void shouldHandleDataSourceCreationFailure() {
-      DataSourceFactory failingFactory =
+      DataSourceFactoryProvider failingFactory =
           secret -> {
             throw new RuntimeException("Simulated DataSource creation failure");
           };
@@ -550,7 +550,7 @@ public class RotatingDataSourceIT {
     }
   }
 
-  private DataSourceFactory hikariFactory() {
+  private DataSourceFactoryProvider hikariFactory() {
     return secret -> {
       final var cfg = new HikariConfig();
       final var url =

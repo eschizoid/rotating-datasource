@@ -136,7 +136,7 @@ public final class RotatingDataSource implements DataSource {
   private static final Logger logger = System.getLogger(RotatingDataSource.class.getName());
 
   private final String secretId;
-  private final DataSourceFactory factory;
+  private final DataSourceFactoryProvider factory;
   private final AuthErrorDetector authErrorDetector;
   private final Duration overlapDuration;
   private final Duration gracePeriod;
@@ -214,7 +214,7 @@ public final class RotatingDataSource implements DataSource {
    */
   public static class Builder {
     private String secretId;
-    private DataSourceFactory factory;
+    private DataSourceFactoryProvider factory;
     private long refreshIntervalSeconds = 0L;
     private Policy retryPolicy = exponential(10, 1_000L);
     private AuthErrorDetector authErrorDetector = AuthErrorDetector.defaultDetector();
@@ -240,7 +240,7 @@ public final class RotatingDataSource implements DataSource {
      * @param factory function that creates DataSource from secret
      * @return this builder
      */
-    public Builder factory(final DataSourceFactory factory) {
+    public Builder factory(final DataSourceFactoryProvider factory) {
       this.factory = factory;
       return this;
     }

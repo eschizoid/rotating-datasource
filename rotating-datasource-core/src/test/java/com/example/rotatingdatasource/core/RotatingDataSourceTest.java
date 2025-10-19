@@ -19,13 +19,13 @@ import org.mockito.MockedStatic;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class RotatingDataSourceTest {
 
-  private DataSourceFactory mockFactory;
+  private DataSourceFactoryProvider mockFactory;
   private DataSource mockDataSource;
   private MockedStatic<SecretHelper> secretHelperMock;
 
   @BeforeEach
   void setUp() {
-    mockFactory = mock(DataSourceFactory.class);
+    mockFactory = mock(DataSourceFactoryProvider.class);
     mockDataSource = mock(DataSource.class);
     when(mockFactory.create(any())).thenReturn(mockDataSource);
 
@@ -185,7 +185,7 @@ public class RotatingDataSourceTest {
     void shouldRotateCredentialsOnReset() throws SQLException, InterruptedException {
       final var oldDataSource = mock(DataSource.class);
       final var newDataSource = mock(DataSource.class);
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
 
       when(factory.create(any())).thenReturn(oldDataSource).thenReturn(newDataSource);
 
@@ -213,7 +213,7 @@ public class RotatingDataSourceTest {
     @DisplayName("Should handle concurrent reset calls")
     void shouldHandleConcurrentResetCalls() throws InterruptedException {
       final var resetCount = new AtomicInteger(0);
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
 
       when(factory.create(any()))
           .thenAnswer(
@@ -250,7 +250,7 @@ public class RotatingDataSourceTest {
     @Test
     @DisplayName("Should fail reset when factory throws exception")
     void shouldFailResetWhenFactoryThrows() {
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
       when(factory.create(any()))
           .thenReturn(mockDataSource)
           .thenThrow(new RuntimeException("Factory failed"));
@@ -271,7 +271,7 @@ public class RotatingDataSourceTest {
     void shouldMaintainSecondaryDataSourceDuringOverlap() throws InterruptedException {
       final var oldDataSource = mock(DataSource.class);
       final var newDataSource = mock(DataSource.class);
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
 
       when(factory.create(any())).thenReturn(oldDataSource).thenReturn(newDataSource);
 
@@ -298,7 +298,7 @@ public class RotatingDataSourceTest {
       final var oldDataSource = mock(DataSource.class);
       final var newDataSource = mock(DataSource.class);
       final var secondaryConnection = mock(Connection.class);
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
 
       when(factory.create(any())).thenReturn(oldDataSource).thenReturn(newDataSource);
 
@@ -340,7 +340,7 @@ public class RotatingDataSourceTest {
     void shouldExpireSecondaryAfterOverlap() throws InterruptedException {
       final var oldDataSource = mock(DataSource.class);
       final var newDataSource = mock(DataSource.class);
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
 
       when(factory.create(any())).thenReturn(oldDataSource).thenReturn(newDataSource);
 
@@ -371,7 +371,7 @@ public class RotatingDataSourceTest {
       final var oldDataSource =
           mock(DataSource.class, withSettings().extraInterfaces(AutoCloseable.class));
       final var newDataSource = mock(DataSource.class);
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
 
       when(factory.create(any())).thenReturn(oldDataSource).thenReturn(newDataSource);
 
@@ -395,7 +395,7 @@ public class RotatingDataSourceTest {
       final var oldDataSource =
           mock(DataSource.class, withSettings().extraInterfaces(AutoCloseable.class));
       final var newDataSource = mock(DataSource.class);
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
 
       when(factory.create(any())).thenReturn(oldDataSource).thenReturn(newDataSource);
 
@@ -421,7 +421,7 @@ public class RotatingDataSourceTest {
       final var newDataSource =
           mock(DataSource.class, withSettings().extraInterfaces(AutoCloseable.class));
       final var newerDataSource = mock(DataSource.class);
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
 
       when(factory.create(any()))
           .thenReturn(oldDataSource)
@@ -452,7 +452,7 @@ public class RotatingDataSourceTest {
     @Test
     @DisplayName("Should schedule proactive refresh when interval is set")
     void shouldScheduleProactiveRefresh() {
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
       final var oldDataSource = mock(DataSource.class);
       final var newDataSource = mock(DataSource.class);
 
@@ -473,7 +473,7 @@ public class RotatingDataSourceTest {
     @Test
     @DisplayName("Should not schedule refresh when interval is zero")
     void shouldNotScheduleRefreshWhenIntervalIsZero() throws InterruptedException {
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
       when(factory.create(any())).thenReturn(mockDataSource);
 
       final var rotatingDs =
@@ -591,7 +591,7 @@ public class RotatingDataSourceTest {
           mock(DataSource.class, withSettings().extraInterfaces(AutoCloseable.class));
       final var secondaryDataSource =
           mock(DataSource.class, withSettings().extraInterfaces(AutoCloseable.class));
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
 
       when(factory.create(any())).thenReturn(primaryDataSource).thenReturn(secondaryDataSource);
 
@@ -631,7 +631,7 @@ public class RotatingDataSourceTest {
     @Test
     @DisplayName("Should cancel pending cleanups on shutdown")
     void shouldCancelPendingCleanupsOnShutdown() {
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
       final var oldDataSource = mock(DataSource.class);
       final var newDataSource = mock(DataSource.class);
 
@@ -659,7 +659,7 @@ public class RotatingDataSourceTest {
     @DisplayName("Should use custom retry policy")
     void shouldUseCustomRetryPolicy() throws SQLException {
       final var attempts = new AtomicInteger(0);
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
       final var dataSource = mock(DataSource.class);
 
       when(factory.create(any())).thenReturn(dataSource);
@@ -696,7 +696,7 @@ public class RotatingDataSourceTest {
     @DisplayName("Should use custom auth error detector")
     void shouldUseCustomAuthErrorDetector() throws SQLException {
       final var attempts = new AtomicInteger(0);
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
       final var oldDataSource = mock(DataSource.class);
       final var newDataSource = mock(DataSource.class);
 
@@ -736,7 +736,7 @@ public class RotatingDataSourceTest {
     @Test
     @DisplayName("Should return correct overlap expiration time")
     void shouldReturnCorrectOverlapExpiration() {
-      final var factory = mock(DataSourceFactory.class);
+      final var factory = mock(DataSourceFactoryProvider.class);
       final var oldDataSource = mock(DataSource.class);
       final var newDataSource = mock(DataSource.class);
 

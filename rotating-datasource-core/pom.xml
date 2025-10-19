@@ -12,6 +12,9 @@
     <artifactId>rotating-datasource-core</artifactId>
 
     <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <assertj.version>3.24.2</assertj.version>
         <aws.sdk.version>2.33.9</aws.sdk.version>
         <hikari.version>5.1.0</hikari.version>
@@ -19,8 +22,11 @@
         <junit.jupiter.version>5.13.4</junit.jupiter.version>
         <mockito.version>5.13.0</mockito.version>
         <mockito.inline.version>5.2.0</mockito.inline.version>
-        <postgresql.version>42.7.7</postgresql.version>
+        <mockito.version>5.13.0</mockito.version>
         <mysql.version>9.3.0</mysql.version>
+        <postgresql.version>42.7.7</postgresql.version>
+        <r2dbc.version>1.0.0.RELEASE</r2dbc.version>
+        <reactor.version>3.5.20</reactor.version>
         <testcontainers.version>1.21.3</testcontainers.version>
     </properties>
 
@@ -46,6 +52,17 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sdk-core</artifactId>
             <version>${aws.sdk.version}</version>
+        </dependency>
+        <!-- rd2bc dependencies -->
+        <dependency>
+            <groupId>io.r2dbc</groupId>
+            <artifactId>r2dbc-spi</artifactId>
+            <version>${r2dbc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+            <version>${reactor.version}</version>
         </dependency>
 
         <!-- JUnit for testing -->

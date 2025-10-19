@@ -3,7 +3,7 @@ package com.example;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
+import com.example.rotatingdatasource.core.ConnectionFactoryProvider;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.*;
@@ -15,17 +15,16 @@ import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 /**
- * Load test to ensure the Tomcat JDBC pool is not exhausted under concurrent queries and there are
- * no leaks.
+ * Load test to ensure the pool is not exhausted under concurrent queries and there are no leaks.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
 public class ConnectionLoadTest {
 
-  private static final String SECRET_ID = "db/secret-load-tomcat";
+  private static final String SECRET_ID = "db/secret-load";
   private static final DockerImageName LOCALSTACK_IMAGE =
       DockerImageName.parse("localstack/localstack:3");
-  private static final DockerImageName POSTGRES_IMAGE = DockerImageName.parse("postgres:17");
+  private static final DockerImageName POSTGRES_IMAGE = DockerImageName.parse("postgres:15");
 
   private PostgreSQLContainer<?> postgres;
   private GenericContainer<?> localstack;
@@ -100,7 +99,7 @@ public class ConnectionLoadTest {
     }
   }
 
-  private DataSourceFactoryProvider buildFactory() {
-    return Pool.tomcatFactory;
+  private ConnectionFactoryProvider buildFactory() {
+    return Pool.r2dbcPoolFactory;
   }
 }

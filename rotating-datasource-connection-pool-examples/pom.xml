@@ -14,19 +14,22 @@
 
     <modules>
         <module>dbcp2-app</module>
-        <module>hikaricp-app</module>
-        <module>tomcat-jdbc-app</module>
         <module>c3p0-app</module>
+        <module>hikaricp-app</module>
+        <module>r2dbc-app</module>
+        <module>tomcat-jdbc-app</module>
     </modules>
 
     <properties>
         <apache.dbcp2.version>2.13.0</apache.dbcp2.version>
+        <c3p0.version>0.11.2</c3p0.version>
         <hikari.version>5.1.0</hikari.version>
         <junit.jupiter.version>5.13.4</junit.jupiter.version>
+        <r2dbc.postgresql>1.1.0.RELEASE</r2dbc.postgresql>
+        <r2dbc.version>1.0.2.RELEASE</r2dbc.version>
         <postgresql.version>42.7.7</postgresql.version>
         <testcontainers.version>1.21.3</testcontainers.version>
         <tomcat.jdbc.version>11.0.11</tomcat.jdbc.version>
-        <c3p0.version>0.11.2</c3p0.version>
     </properties>
 
     <dependencyManagement>
@@ -57,6 +60,16 @@
                 <groupId>com.mchange</groupId>
                 <artifactId>c3p0</artifactId>
                 <version>${c3p0.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.r2dbc</groupId>
+                <artifactId>r2dbc-pool</artifactId>
+                <version>${r2dbc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>r2dbc-postgresql</artifactId>
+                <version>${r2dbc.postgresql}</version>
             </dependency>
 
             <!-- PostgreSQL JDBC driver -->

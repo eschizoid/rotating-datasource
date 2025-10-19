@@ -1,12 +1,12 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.DataSourceFactory;
+import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
 import org.apache.commons.dbcp2.BasicDataSource;
 
 public class Pool {
 
   /** Public factory for Apache DBCP2 DataSource instances built from a DbSecret. */
-  public static final DataSourceFactory dbcpFactory =
+  public static final DataSourceFactoryProvider dbcpFactory =
       secret -> {
         final var ds = new BasicDataSource();
         final var jdbcUrl =

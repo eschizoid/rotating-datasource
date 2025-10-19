@@ -1,6 +1,6 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.DataSourceFactory;
+import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
 import com.example.rotatingdatasource.core.RotatingDataSource;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -17,7 +17,7 @@ public class Main {
   }
 
   @Bean
-  public DataSourceFactory dataSourceFactory() {
+  public DataSourceFactoryProvider dataSourceFactory() {
     return secret -> {
       final var cfg = new HikariConfig();
       cfg.setJdbcUrl(
@@ -31,7 +31,7 @@ public class Main {
   }
 
   @Bean
-  public DataSource dataSource(final DataSourceFactory factory) {
+  public DataSource dataSource(final DataSourceFactoryProvider factory) {
     final var secretId = System.getProperty("db.secretId");
     return RotatingDataSource.builder()
         .secretId(secretId)
