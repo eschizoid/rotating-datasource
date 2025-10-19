@@ -59,29 +59,33 @@ mvn -q -pl rotating-datasource-core test
 ### Basic Usage with HikariCP
 
 ```java
+import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
 import com.example.rotatingdatasource.core.RotatingDataSource;
-import com.example.rotatingdatasource.core.DataSourceFactory;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
-DataSourceFactory factory = secret -> {
-  var cfg = new HikariConfig();
-  cfg.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
-  cfg.setUsername(secret.username());
-  cfg.setPassword(secret.password());
-  cfg.setMaximumPoolSize(10);
-  return new HikariDataSource(cfg);
+DataSourceFactoryProvider factory = secret -> {
+    var cfg = new HikariConfig();
+    cfg.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
+    cfg.setUsername(secret.username());
+    cfg.setPassword(secret.password());
+    cfg.setMaximumPoolSize(10);
+    return new HikariDataSource(cfg);
 };
 
 var rotatingDs = RotatingDataSource.builder()
-    .secretId("my-db-secret")
-    .factory(factory)
-    .refreshIntervalSeconds(60)
-    .build();
+        .secretId("my-db-secret")
+        .factory(factory)
+        .refreshIntervalSeconds(60)
+        .build();
 
-try (var conn = rotatingDs.getConnection(); var stmt = conn.createStatement()) {
-  var rs = stmt.executeQuery("SELECT current_user");
-  rs.next();
+try(
+var conn = rotatingDs.getConnection();
+var stmt = conn.createStatement()){
+var rs = stmt.executeQuery("SELECT current_user");
+  rs.
+
+next();
 }
 ```
 

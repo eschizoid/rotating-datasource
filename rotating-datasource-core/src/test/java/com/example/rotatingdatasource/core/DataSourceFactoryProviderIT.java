@@ -17,7 +17,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
-public class DataSourceFactoryIT {
+public class DataSourceFactoryProviderIT {
 
   enum DbPlatform {
     POSTGRES {
@@ -82,7 +82,7 @@ public class DataSourceFactoryIT {
               container.getFirstMappedPort(),
               container.getDatabaseName());
 
-      final DataSourceFactory factory =
+      final DataSourceFactoryProvider factory =
           s -> {
             final var cfg = new HikariConfig();
             cfg.setJdbcUrl(platform.jdbcUrl(s));

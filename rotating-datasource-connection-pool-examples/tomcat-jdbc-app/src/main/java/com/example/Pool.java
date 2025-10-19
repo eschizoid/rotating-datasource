@@ -1,13 +1,13 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.DataSourceFactory;
+import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
 import org.apache.tomcat.jdbc.pool.DataSource;
 import org.apache.tomcat.jdbc.pool.PoolProperties;
 
 public class Pool {
 
   /** Public factory for Tomcat JDBC Pool DataSource instances built from a DbSecret. */
-  public static final DataSourceFactory tomcatFactory =
+  public static final DataSourceFactoryProvider tomcatFactory =
       secret -> {
         final var p = new PoolProperties();
         p.setUrl(

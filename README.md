@@ -18,7 +18,7 @@ connection pool when secrets change and transparently retries connection acquisi
 
 ```java
 import com.example.rotatingdatasource.core.RotatingDataSource;
-import com.example.rotatingdatasource.core.DataSourceFactory;
+import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 

@@ -3,7 +3,7 @@ package com.example;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.DataSourceFactory;
+import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
 import com.example.rotatingdatasource.core.DbSecret;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.DriverManager;
@@ -149,7 +149,7 @@ public class AppAutoRefreshIntegrationTest {
     throw new SQLException("Timeout waiting for auto-refresh");
   }
 
-  private DataSourceFactory buildFactory() {
+  private DataSourceFactoryProvider buildFactory() {
     return Pool.tomcatFactory;
   }
 
