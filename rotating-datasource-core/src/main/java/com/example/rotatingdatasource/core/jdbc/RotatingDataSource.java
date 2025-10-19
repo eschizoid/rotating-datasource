@@ -1,10 +1,10 @@
-package com.example.rotatingdatasource.core;
+package com.example.rotatingdatasource.core.jdbc;
 
-import static com.example.rotatingdatasource.core.Retry.*;
-import static com.example.rotatingdatasource.core.Retry.Policy.exponential;
+import static com.example.rotatingdatasource.core.jdbc.Retry.*;
+import static com.example.rotatingdatasource.core.jdbc.Retry.Policy.exponential;
 import static java.lang.System.Logger.Level.*;
 
-import com.example.rotatingdatasource.core.Retry.Policy;
+import com.example.rotatingdatasource.core.jdbc.Retry.Policy;
 import com.example.rotatingdatasource.core.secrets.SecretHelper;
 
 import java.io.PrintWriter;
@@ -142,7 +142,7 @@ public final class RotatingDataSource implements DataSource {
   private final AuthErrorDetector authErrorDetector;
   private final Duration overlapDuration;
   private final Duration gracePeriod;
-  private final Retry.Policy retryPolicy;
+  private final Policy retryPolicy;
 
   private final AtomicReference<DataSource> primaryDataSource = new AtomicReference<>();
   private final AtomicReference<DataSource> secondaryDataSource = new AtomicReference<>();

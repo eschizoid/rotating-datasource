@@ -8,19 +8,19 @@
  * <p>Package contents:
  *
  * <ul>
- *   <li>{@link com.example.rotatingdatasource.core.DbSecret} – immutable representation of a
+ *   <li>{@link com.example.rotatingdatasource.core.secrets.DbSecret} – immutable representation of a
  *       database secret payload.
  *   <li>{@link com.example.rotatingdatasource.core.secrets.SecretsManagerProvider} – lazily configured AWS
  *       Secrets Manager client (supports endpoint/region/credentials overrides).
  *   <li>{@link com.example.rotatingdatasource.core.secrets.SecretHelper} – fetches raw secret JSON and
  *       deserializes to {@code DbSecret}.
- *   <li>{@link com.example.rotatingdatasource.core.DataSourceFactoryProvider} – functional factory for
+ *   <li>{@link com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider} – functional factory for
  *       building a DataSource from a secret.
- *   <li>{@link com.example.rotatingdatasource.core.RotatingDataSource} – wraps a DataSource and
+ *   <li>{@link com.example.rotatingdatasource.core.jdbc.RotatingDataSource} – wraps a DataSource and
  *       recreates it on demand.
- *   <li>{@link com.example.rotatingdatasource.core.Retry} – minimal retry helper used to express
+ *   <li>{@link com.example.rotatingdatasource.core.jdbc.Retry} – minimal retry helper used to express
  *       retry-on-exception.
- *   <li>{@link com.example.rotatingdatasource.core.DbClient} – executes JDBC operations and retries
+ *   <li>{@link com.example.rotatingdatasource.core.jdbc.DbClient} – executes JDBC operations and retries
  *       once on auth failures.
  * </ul>
  *

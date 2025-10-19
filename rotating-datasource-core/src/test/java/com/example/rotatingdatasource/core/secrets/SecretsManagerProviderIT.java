@@ -1,11 +1,10 @@
-package com.example.rotatingdatasource.core;
+package com.example.rotatingdatasource.core.secrets;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.net.URI;
 
-import com.example.rotatingdatasource.core.secrets.SecretsManagerProvider;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 import org.testcontainers.DockerClientFactory;

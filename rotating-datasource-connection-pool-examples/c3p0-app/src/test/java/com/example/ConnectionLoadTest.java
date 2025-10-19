@@ -3,7 +3,7 @@ package com.example;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
+import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.*;

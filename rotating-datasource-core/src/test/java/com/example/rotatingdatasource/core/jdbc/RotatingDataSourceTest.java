@@ -1,4 +1,4 @@
-package com.example.rotatingdatasource.core;
+package com.example.rotatingdatasource.core.jdbc;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 
+import com.example.rotatingdatasource.core.secrets.DbSecret;
 import com.example.rotatingdatasource.core.secrets.SecretHelper;
 import org.junit.jupiter.api.*;
 import org.mockito.MockedStatic;

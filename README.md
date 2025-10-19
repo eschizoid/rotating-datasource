@@ -17,8 +17,8 @@ connection pool when secrets change and transparently retries connection acquisi
 ### 1) Create with the builder (HikariCP example)
 
 ```java
-import com.example.rotatingdatasource.core.RotatingDataSource;
-import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
+import com.example.rotatingdatasource.core.jdbc.RotatingDataSource;
+import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
@@ -43,7 +43,7 @@ Use ds like any DataSource. Connection acquisition automatically retries on auth
 ### 2) Customize retry policy
 
 ```java
-import com.example.rotatingdatasource.core.Retry;
+import com.example.rotatingdatasource.core.jdbc.Retry;
 
 var ds = RotatingDataSource.builder()
     .secretId("my-db-secret")

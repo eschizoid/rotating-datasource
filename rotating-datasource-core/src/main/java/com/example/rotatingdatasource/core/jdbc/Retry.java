@@ -1,4 +1,4 @@
-package com.example.rotatingdatasource.core;
+package com.example.rotatingdatasource.core.jdbc;
 
 import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.WARNING;

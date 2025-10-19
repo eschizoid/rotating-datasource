@@ -2,10 +2,10 @@ package com.example;
 
 import static java.lang.System.Logger.Level.DEBUG;
 
-import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
-import com.example.rotatingdatasource.core.DbClient;
-import com.example.rotatingdatasource.core.Retry;
-import com.example.rotatingdatasource.core.RotatingDataSource;
+import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
+import com.example.rotatingdatasource.core.jdbc.DbClient;
+import com.example.rotatingdatasource.core.jdbc.Retry;
+import com.example.rotatingdatasource.core.jdbc.RotatingDataSource;
 import java.sql.SQLException;
 
 /** Demo application showing how to query a database while surviving secret rotation. */

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.example.rotatingdatasource.core.reactive.ConnectionFactoryProvider;
-import com.example.rotatingdatasource.core.DbSecret;
+import com.example.rotatingdatasource.core.secrets.DbSecret;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.DriverManager;
 import java.sql.SQLException;

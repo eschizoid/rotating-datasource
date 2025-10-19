@@ -1,4 +1,6 @@
-package com.example.rotatingdatasource.core;
+package com.example.rotatingdatasource.core.jdbc;
+
+import com.example.rotatingdatasource.core.secrets.DbSecret;
 
 import javax.sql.DataSource;
 

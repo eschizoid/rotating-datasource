@@ -20,7 +20,7 @@ module com.example.rotatingdatasource.core {
   requires software.amazon.awssdk.services.secretsmanager;
   requires com.fasterxml.jackson.databind;
 
-  exports com.example.rotatingdatasource.core;
   exports com.example.rotatingdatasource.core.secrets;
   exports com.example.rotatingdatasource.core.reactive;
+  exports com.example.rotatingdatasource.core.jdbc;
 }

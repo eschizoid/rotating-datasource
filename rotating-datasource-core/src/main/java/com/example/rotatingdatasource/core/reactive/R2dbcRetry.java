@@ -1,6 +1,6 @@
 package com.example.rotatingdatasource.core.reactive;
 
-import com.example.rotatingdatasource.core.Retry;
+import com.example.rotatingdatasource.core.jdbc.Retry;
 import io.r2dbc.spi.R2dbcException;
 import java.util.Locale;
 import java.util.function.Predicate;
