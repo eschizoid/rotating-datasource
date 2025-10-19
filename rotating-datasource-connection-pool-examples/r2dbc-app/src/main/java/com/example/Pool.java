@@ -9,6 +9,7 @@ import java.time.Duration;
 
 public class Pool {
 
+  /** Public factory for r2dbc ConnectionPool instances built from a DbSecret. */
   public static final ConnectionFactoryProvider r2dbcPoolFactory =
       secret -> {
         final var config =
