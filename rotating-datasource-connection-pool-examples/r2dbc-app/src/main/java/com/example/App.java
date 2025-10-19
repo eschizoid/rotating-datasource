@@ -69,7 +69,7 @@ public class App {
             conn ->
                 Mono.from(conn.createStatement("SELECT NOW()").execute())
                     .flatMap(result -> Mono.from(result.map((row, md) -> row.get(0, String.class))))
-                    .onErrorResume(th -> Mono.error(th)),
+                    .onErrorResume(Mono::error),
             conn -> Mono.from(conn.close()))
         .block();
   }
