@@ -193,7 +193,7 @@ public class SpringDataMainIntegrationTest {
                   jdbc.queryForObject("SELECT now()", Instant.class);
                   userRepo2.save(
                       new TestUser(
-                          "w%d_%d".formatted(w, System.nanoTime()), "w" + w + "@example.com"));
+                          "w%d_%d".formatted(w, System.nanoTime()), "w%d@example.com".formatted(w)));
                 } catch (final Throwable t) {
                   workerErrors.add(t);
                 }

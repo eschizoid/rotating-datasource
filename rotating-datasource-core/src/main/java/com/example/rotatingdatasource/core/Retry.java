@@ -567,9 +567,6 @@ public final class Retry {
       final Policy policy)
       throws E {
     var attempt = 0;
-    if (policy.maxAttempts() < 1) {
-      throw new IllegalArgumentException("policy.maxAttempts must be >= 1");
-    }
     while (true) {
       attempt++;
       try {
@@ -641,8 +638,7 @@ public final class Retry {
    * @param supplier operation to execute
    * @param shouldRetry predicate determining whether the exception is retryable
    * @param beforeRetry hook to run before each retry attempt
-   * @param maxAttempts total attempts including the first (must be >= 1)
-   * @param delayMillis delay between attempts in milliseconds (non-negative)
+   * @param policy retry policy configuration
    * @param listener listener to be notified of retry events
    * @param <T> result type
    * @param <E> exception type extending SQLException
@@ -653,11 +649,9 @@ public final class Retry {
       final SqlExceptionSupplier<T, E> supplier,
       final Predicate<E> shouldRetry,
       final Runnable beforeRetry,
-      final int maxAttempts,
-      final long delayMillis,
+      final Policy policy,
       final RetryListener listener)
       throws E {
-    if (maxAttempts < 1) throw new IllegalArgumentException("maxAttempts must be >= 1");
     var attempt = 0;
     while (true) {
       attempt++;
@@ -667,7 +661,7 @@ public final class Retry {
         @SuppressWarnings("unchecked")
         final E typedException = (E) ex;
 
-        if (!shouldRetry.test(typedException) || attempt >= maxAttempts) {
+        if (!shouldRetry.test(typedException) || attempt >= policy.maxAttempts()) {
           throw typedException;
         }
 
@@ -676,9 +670,10 @@ public final class Retry {
         LOGGER.log(DEBUG, "Attempt {0} failed, retrying with listener...", attempt);
         beforeRetry.run();
 
-        if (delayMillis > 0) {
+        final long delay = policy.calculateDelay(attempt);
+        if (delay > 0) {
           try {
-            Thread.sleep(delayMillis);
+            Thread.sleep(delay);
           } catch (final InterruptedException ie) {
             Thread.currentThread().interrupt();
             throw typedException;
