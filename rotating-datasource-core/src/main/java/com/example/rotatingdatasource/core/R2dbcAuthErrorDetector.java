@@ -11,7 +11,7 @@ public interface R2dbcAuthErrorDetector {
     return R2dbcRetryHelper::isAuthError;
   }
 
-  static R2dbcAuthErrorDetector custom(Predicate<Throwable> predicate) {
+  static R2dbcAuthErrorDetector custom(final Predicate<Throwable> predicate) {
     return predicate::test;
   }
 

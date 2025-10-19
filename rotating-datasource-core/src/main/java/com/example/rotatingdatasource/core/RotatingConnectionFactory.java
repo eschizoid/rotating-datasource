@@ -5,6 +5,7 @@ import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -12,6 +13,59 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.retry.Retry;
 
+/**
+ * R2DBC ConnectionFactory wrapper that automatically survives credential rotations with
+ * built-in retry and optional proactive refresh, mirroring RotatingDataSource features.
+ *
+ * <h2>Basic Usage</h2>
+ *
+ * <pre>{@code
+ * var rotatingCf = RotatingConnectionFactory.builder()
+ *     .secretId("my-db-secret")
+ *     .factory(secret -> createR2dbcPool(secret))
+ *     .build();
+ *
+ * return Mono.usingWhen(
+ *     Mono.from(rotatingCf.create()),
+ *     conn -> Mono.from(conn.createStatement("SELECT 1").execute())
+ *                 .flatMap(r -> Mono.from(r.map((row, md) -> row.get(0, Integer.class)))),
+ *     conn -> Mono.from(conn.close()));
+ * }</pre>
+ *
+ * <h2>Proactive Secret Refresh</h2>
+ *
+ * <pre>{@code
+ * var rotatingCf = RotatingConnectionFactory.builder()
+ *     .secretId("my-db-secret")
+ *     .factory(secret -> createR2dbcPool(secret))
+ *     .refreshIntervalSeconds(60L)
+ *     .build();
+ * }</pre>
+ *
+ * <h2>Dual-Password Overlap for RDS</h2>
+ *
+ * <pre>{@code
+ * var rotatingCf = RotatingConnectionFactory.builder()
+ *     .secretId("my-db-secret")
+ *     .factory(secret -> createR2dbcPool(secret))
+ *     .refreshIntervalSeconds(60L)
+ *     .overlapDuration(Duration.ofHours(24))
+ *     .build();
+ * }</pre>
+ *
+ * <h2>Full Configuration</h2>
+ *
+ * <pre>{@code
+ * var rotatingCf = RotatingConnectionFactory.builder()
+ *     .secretId("my-db-secret")
+ *     .factory(secret -> createR2dbcPool(secret))
+ *     .refreshIntervalSeconds(60L)
+ *     .authErrorDetector(R2dbcAuthErrorDetector.defaultDetector())
+ *     .overlapDuration(Duration.ofMinutes(15))
+ *     .gracePeriod(Duration.ofSeconds(60))
+ *     .build();
+ * }</pre>
+ */
 public final class RotatingConnectionFactory implements ConnectionFactory {
 
   private static final System.Logger logger =
@@ -47,52 +101,144 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
                   this::checkAndRefresh,
                   Duration.ofSeconds(builder.refreshIntervalSeconds).toMillis(),
                   Duration.ofSeconds(builder.refreshIntervalSeconds).toMillis(),
-                  TimeUnit.SECONDS);
+                  TimeUnit.MILLISECONDS);
     }
   }
 
+  /**
+   * Creates a new builder instance.
+   *
+   * @return new builder for configuring a RotatingConnectionFactory
+   */
   public static Builder builder() {
     return new Builder();
   }
 
+  /**
+   * Builder for creating RotatingConnectionFactory instances with fluent configuration.
+   *
+   * <h3>Example: Minimal Configuration</h3>
+   *
+   * <pre>{@code
+   * var rotatingCf = RotatingConnectionFactory.builder()
+   *     .secretId("my-db-secret")
+   *     .factory(secret -> createR2dbcPool(secret))
+   *     .build();
+   * }</pre>
+   *
+   * <h3>Example: Production Configuration</h3>
+   *
+   * <pre>{@code
+   * var rotatingCf = RotatingConnectionFactory.builder()
+   *     .secretId("prod-db-secret")
+   *     .factory(secret -> createR2dbcPool(secret))
+   *     .refreshIntervalSeconds(60L)
+   *     .overlapDuration(Duration.ofHours(24))
+   *     .gracePeriod(Duration.ofMinutes(2))
+   *     .build();
+   * }</pre>
+   */
   public static class Builder {
     private String secretId;
     private ConnectionFactoryProvider factory;
     private long refreshIntervalSeconds = 0L;
     private R2dbcAuthErrorDetector authErrorDetector = R2dbcAuthErrorDetector.defaultDetector();
-    private Duration overlapDuration = Duration.ZERO;
+    private Duration overlapDuration = Duration.ofMinutes(15);
     private Duration gracePeriod = Duration.ofSeconds(60);
 
+    /**
+     * Sets the AWS Secrets Manager secret ID (required).
+     *
+     * @param secretId the secret identifier
+     * @return this builder
+     */
     public Builder secretId(String secretId) {
       this.secretId = secretId;
       return this;
     }
 
+    /**
+     * Sets the ConnectionFactory factory function (required).
+     *
+     * @param factory function that creates a ConnectionFactory from a DbSecret
+     * @return this builder
+     */
     public Builder factory(ConnectionFactoryProvider factory) {
       this.factory = factory;
       return this;
     }
 
+    /**
+     * Sets the proactive refresh interval in seconds.
+     *
+     * <p>When set to a value greater than 0, the factory will periodically check for secret
+     * version changes and automatically refresh credentials.
+     *
+     * <p>Default: 0 (disabled)
+     *
+     * @param refreshIntervalSeconds interval in seconds (0 to disable)
+     * @return this builder
+     */
     public Builder refreshIntervalSeconds(long refreshIntervalSeconds) {
       this.refreshIntervalSeconds = refreshIntervalSeconds;
       return this;
     }
 
+    /**
+     * Sets the authentication error detector.
+     *
+     * <p>Default: {@link R2dbcAuthErrorDetector#defaultDetector()}
+     *
+     * @param authErrorDetector custom auth error detection logic
+     * @return this builder
+     */
     public Builder authErrorDetector(R2dbcAuthErrorDetector authErrorDetector) {
       this.authErrorDetector = authErrorDetector;
       return this;
     }
 
+    /**
+     * Sets the dual-password overlap duration.
+     *
+     * <p>During this period after a refresh, both old and new credentials remain valid. This
+     * supports zero-downtime rotation for databases like AWS RDS that support dual passwords.
+     *
+     * <p>Default: 15 minutes
+     *
+     * @param overlapDuration how long to keep old credentials valid
+     * @return this builder
+     */
     public Builder overlapDuration(Duration overlapDuration) {
       this.overlapDuration = overlapDuration;
       return this;
     }
 
+    /**
+     * Sets the grace period before disposing the old ConnectionFactory when not using overlap.
+     *
+     * <p>After a credential refresh (when overlap is zero), the old factory will be kept alive for
+     * this duration to allow in-flight operations to complete.
+     *
+     * <p>Default: 60 seconds
+     *
+     * @param gracePeriod how long to wait before disposing old factories
+     * @return this builder
+     */
     public Builder gracePeriod(Duration gracePeriod) {
       this.gracePeriod = gracePeriod;
       return this;
     }
 
+    /**
+     * Builds the RotatingConnectionFactory instance.
+     *
+     * <p>Immediately fetches the secret and creates the initial ConnectionFactory. If the secret
+     * doesn't exist or the factory fails, this method throws.
+     *
+     * @return configured RotatingConnectionFactory
+     * @throws IllegalStateException if required fields are not set
+     * @throws RuntimeException if initial ConnectionFactory creation fails
+     */
     public RotatingConnectionFactory build() {
       if (secretId == null || secretId.isBlank())
         throw new IllegalStateException("secretId is required");
@@ -101,6 +247,15 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
     }
   }
 
+  /**
+   * Creates a new R2DBC Connection.
+   *
+   * <p>Before acquiring the connection, this method checks for a newer secret version and refreshes
+   * credentials if needed. It will retry once on authentication errors by resetting credentials, and
+   * will also retry on transient connection errors using an exponential backoff policy.
+   *
+   * @return a Mono emitting the acquired Connection
+   */
   @Override
   public Mono<Connection> create() {
     return checkLatestVersionAndRefreshIfNeeded()
@@ -114,6 +269,18 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
     return primaryFactory.get().getMetadata();
   }
 
+  /**
+   * Forces an immediate credential refresh.
+   *
+   * <p>Creates a new underlying ConnectionFactory using the latest secret version and swaps it in.
+   * If overlapDuration is non-zero, the previous factory remains available until the overlap window
+   * expires; otherwise it is disposed after the configured gracePeriod.
+   *
+   * <p>Concurrent calls are coalesced; if a refresh is already in progress, subsequent calls return
+   * immediately.
+   *
+   * @return a Mono that completes when the refresh operation has been scheduled/applied
+   */
   public Mono<Void> reset() {
     return Mono.defer(
         () -> {
@@ -173,6 +340,14 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
         });
   }
 
+  /**
+   * Shuts down resources associated with this rotating factory.
+   *
+   * <p>Cancels the proactive refresh scheduler if enabled and disposes the current and any
+   * secondary ConnectionFactory instances.
+   *
+   * @return a Mono that completes after resources have been disposed
+   */
   public Mono<Void> shutdown() {
     return Mono.fromRunnable(
         () -> {
@@ -267,9 +442,26 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
     }
   }
 
-  private boolean isOverlapActive() {
+  /**
+   * Returns whether the dual-password overlap window is currently active.
+   *
+   * <p>During overlap, authentication failures on the primary will fall back to acquiring
+   * connections from the secondary factory created during the last refresh.
+   *
+   * @return true if overlap is active, false otherwise
+   */
+  public boolean isOverlapActive() {
     final var secondary = secondaryFactory.get();
     final var expiresAt = secondaryExpiresAt.get();
     return secondary != null && expiresAt != null && Instant.now().isBefore(expiresAt);
+  }
+
+  /**
+   * Returns the timestamp when the current overlap window will end, if active.
+   *
+   * @return Optional of Instant with the overlap expiration time, or empty if no overlap is active
+   */
+  public Optional<Instant> getOverlapExpiresAt() {
+    return java.util.Optional.ofNullable(secondaryExpiresAt.get());
   }
 }

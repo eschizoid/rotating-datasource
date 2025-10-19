@@ -24,42 +24,30 @@ final class R2dbcRetryHelper {
   };
 
   static boolean isAuthError(Throwable error) {
-    if (!(error instanceof R2dbcException r2dbcEx)) {
-      return false;
-    }
+    if (!(error instanceof R2dbcException r2dbcEx)) return false;
 
     final var sqlState = r2dbcEx.getSqlState();
-    if ("28000".equals(sqlState) || "28P01".equals(sqlState)) {
-      return true;
-    }
+    if ("28000".equals(sqlState) || "28P01".equals(sqlState)) return true;
 
     final var msg = r2dbcEx.getMessage();
     if (msg != null) {
       final var lower = msg.toLowerCase(Locale.ROOT);
-      for (var keyword : AUTH_KEYWORDS) {
-        if (lower.contains(keyword)) return true;
-      }
+      for (var keyword : AUTH_KEYWORDS) if (lower.contains(keyword)) return true;
     }
 
     return false;
   }
 
   static boolean isTransientConnectionError(Throwable error) {
-    if (!(error instanceof R2dbcException r2dbcEx)) {
-      return false;
-    }
+    if (!(error instanceof R2dbcException r2dbcEx)) return false;
 
     final var sqlState = r2dbcEx.getSqlState();
-    if (sqlState != null && sqlState.startsWith("08")) {
-      return true;
-    }
+    if (sqlState != null && sqlState.startsWith("08")) return true;
 
     final var msg = r2dbcEx.getMessage();
     if (msg != null) {
       final var lower = msg.toLowerCase(Locale.ROOT);
-      for (var keyword : TRANSIENT_KEYWORDS) {
-        if (lower.contains(keyword)) return true;
-      }
+      for (var keyword : TRANSIENT_KEYWORDS) if (lower.contains(keyword)) return true;
     }
 
     return false;

@@ -222,7 +222,7 @@ public final class RotatingDataSource implements DataSource {
     /**
      * Sets the retry policy for authentication failures.
      *
-     * <p>Default: exponential backoff (20 attempts, starting at 15 seconds)
+     * <p>Default: exponential backoff (10 attempts, starting at 1 second)
      *
      * @param retryPolicy the retry policy
      * @return this builder
@@ -251,7 +251,7 @@ public final class RotatingDataSource implements DataSource {
      * <p>During this period after a refresh, both old and new credentials remain valid. This
      * supports zero-downtime rotation for databases like AWS RDS that support dual passwords.
      *
-     * <p>Default: ZERO (disabled)
+     * <p>Default: 15 minutes
      *
      * @param overlapDuration how long to keep old credentials valid
      * @return this builder
