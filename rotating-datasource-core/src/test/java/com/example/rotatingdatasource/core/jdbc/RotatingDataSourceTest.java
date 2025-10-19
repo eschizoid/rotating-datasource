@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
+import com.example.rotatingdatasource.core.secrets.DbSecret;
+import com.example.rotatingdatasource.core.secrets.SecretHelper;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -13,9 +15,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
-
-import com.example.rotatingdatasource.core.secrets.DbSecret;
-import com.example.rotatingdatasource.core.secrets.SecretHelper;
 import org.junit.jupiter.api.*;
 import org.mockito.MockedStatic;
 

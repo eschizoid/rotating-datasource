@@ -6,7 +6,6 @@ import static java.lang.System.Logger.Level.*;
 
 import com.example.rotatingdatasource.core.jdbc.Retry.Policy;
 import com.example.rotatingdatasource.core.secrets.SecretHelper;
-
 import java.io.PrintWriter;
 import java.lang.System.Logger;
 import java.sql.Connection;

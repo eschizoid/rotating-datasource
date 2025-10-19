@@ -32,7 +32,9 @@ public class App {
    * @param refreshIntervalSeconds if > 0, enables proactive secret-version checks
    */
   public App(
-          final String secretId, final DataSourceFactoryProvider factory, final long refreshIntervalSeconds) {
+      final String secretId,
+      final DataSourceFactoryProvider factory,
+      final long refreshIntervalSeconds) {
     this.client =
         new DbClient(
             RotatingDataSource.builder()

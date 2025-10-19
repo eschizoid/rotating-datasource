@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.net.URI;
-
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 import org.testcontainers.DockerClientFactory;
