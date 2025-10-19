@@ -17,12 +17,12 @@ connection pool when secrets change and transparently retries connection acquisi
 ### 1) Create with the builder (HikariCP example)
 
 ```java
-import com.example.rotatingdatasource.core.jdbc.RotatingDataSource;
-import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
+import com.example.rotating.datasource.core.jdbc.core.RotatingDataSource;
+import com.example.rotating.datasource.core.jdbc.core.DataSourceFactoryProvider;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
-DataSourceFactory factory = secret -> {
+final var factory = secret -> {
   var cfg = new HikariConfig();
   cfg.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
   cfg.setUsername(secret.username());
@@ -31,7 +31,7 @@ DataSourceFactory factory = secret -> {
   return new HikariDataSource(cfg);
 };
 
-var ds = RotatingDataSource.builder()
+final var ds = RotatingDataSource.builder()
     .secretId("my-db-secret")
     .factory(factory)
     .refreshIntervalSeconds(60)  // optional proactive check
@@ -43,9 +43,9 @@ Use ds like any DataSource. Connection acquisition automatically retries on auth
 ### 2) Customize retry policy
 
 ```java
-import com.example.rotatingdatasource.core.jdbc.Retry;
+import com.example.rotating.datasource.core.jdbc.core.Retry;
 
-var ds = RotatingDataSource.builder()
+final var ds = RotatingDataSource.builder()
     .secretId("my-db-secret")
     .factory(factory)
     .retryPolicy(Retry.Policy.exponential(7, 200L))  // attempts, initial delay (ms)
@@ -58,23 +58,27 @@ var ds = RotatingDataSource.builder()
 - ORMs inherit the same connection-acquisition retry. You typically do not need to call Retry.authRetry().
 
 ```java
-var ds = RotatingDataSource.builder().secretId("my-db-secret").factory(factory).build();
-var emf = Persistence.createEntityManagerFactory("app", Map.of("jakarta.persistence.nonJtaDataSource", ds));
+final var ds = RotatingDataSource.builder().secretId("my-db-secret").factory(factory).build();
+final var emf = Persistence.createEntityManagerFactory("app", Map.of("jakarta.persistence.nonJtaDataSource", ds));
 ```
 
 ## RDS + Secrets Manager Integration
 
 Rotation is performed by AWS Secrets Manager (often via a Lambda). This library:
+
 - Checks the latest secret version and swaps to a new pool when it changes.
 - Retries connection acquisition during/after the swap.
 - Supports two cutover modes:
-  - overlapDuration (default 15 minutes): keep the old pool as a temporary secondary and fall back to it on auth failures during the overlap window. Use for engines/procedures with dual-valid passwords (e.g., some MySQL/Aurora flows).
-  - gracePeriod (default 60 seconds): when overlapDuration is zero, keep the old pool open long enough for in-flight work to finish. Recommended for PostgreSQL where the old password becomes invalid immediately.
+    - overlapDuration (default 15 minutes): keep the old pool as a temporary secondary and fall back to it on auth
+      failures during the overlap window. Use for engines/procedures with dual-valid passwords (e.g., some MySQL/Aurora
+      flows).
+    - gracePeriod (default 60 seconds): when overlapDuration is zero, keep the old pool open long enough for in-flight
+      work to finish. Recommended for PostgreSQL where the old password becomes invalid immediately.
 
 PostgreSQL example (no dual password):
 
 ```java
-var ds = RotatingDataSource.builder()
+final var ds = RotatingDataSource.builder()
     .secretId("rds/postgres/app")
     .factory(factory)
     .overlapDuration(Duration.ZERO)
@@ -86,7 +90,7 @@ var ds = RotatingDataSource.builder()
 MySQL/Aurora example (dual-password overlap in your rotation procedure):
 
 ```java
-var ds = RotatingDataSource.builder()
+final var ds = RotatingDataSource.builder()
     .secretId("rds/mysql/app")
     .factory(factory)
     .overlapDuration(Duration.ofHours(24))  // fallback to old pool if new creds fail during overlap
@@ -119,7 +123,7 @@ var ds = RotatingDataSource.builder()
 DataSourceFactory dataSourceFactory() { /* build HikariDataSource from secret */ }
 
 @Bean
-DataSource dataSource(DataSourceFactory factory) {
+DataSource dataSource(final DataSourceFactory factory) {
   return RotatingDataSource.builder()
       .secretId(System.getProperty("db.secretId"))
       .factory(factory)

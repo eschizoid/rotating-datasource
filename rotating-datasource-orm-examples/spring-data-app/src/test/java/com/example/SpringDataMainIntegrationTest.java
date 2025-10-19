@@ -8,7 +8,7 @@ import static java.util.stream.Collectors.joining;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.secrets.SecretsManagerProvider;
+import com.example.rotating.datasource.core.secrets.SecretsManagerProvider;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,11 +33,10 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class SpringDataMainIntegrationTest {
-  private JdbcTemplate jdbc;
   private static final String SECRET_ID = "it/orm/spring-data/secret";
   private static final System.Logger LOGGER =
       System.getLogger(SpringDataMainIntegrationTest.class.getName());
-
+  private JdbcTemplate jdbc;
   private PostgreSQLContainer<?> postgres;
   private GenericContainer<?> localstack;
   private SecretsManagerClient smClient;

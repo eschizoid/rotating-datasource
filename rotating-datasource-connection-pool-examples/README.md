@@ -1,6 +1,6 @@
 # Rotating Data Source—Connection Pool Examples
 
-Sample runnable apps that demonstrate using the core library with popular JDBC connection pools. Each submodule is a 
+Sample runnable apps that demonstrate using the core library with popular JDBC connection pools. Each submodule is a
 minimal app with tests that show automatic recovery from AWS Secrets Manager password rotation.
 
 Submodules:
@@ -8,6 +8,7 @@ Submodules:
 - `c3p0-app` — uses C3P0
 - `dbcp2-app` — uses Apache Commons DBCP2
 - `hikaricp-app` — uses HikariCP
+- `rdbcp-app` — uses R2DBC Pool (for reactive applications)
 - `tomcat-jdbc-app` — uses Apache Tomcat JDBC pool
 
 ## Requirements
@@ -32,7 +33,8 @@ root README Testing section for an overview.
 Commands:
 
 - `mvn -q -pl rotating-datasource-connection-pool-examples -am clean test` — run tests (requires Docker)
-- `mvn -q -Dtests.integration.disable=true -pl rotating-datasource-connection-pool-examples -am clean test` — skip integration tests
+- `mvn -q -Dtests.integration.disable=true -pl rotating-datasource-connection-pool-examples -am clean test` — skip
+  integration tests
 
 ## Run an example app
 
@@ -45,7 +47,8 @@ Example (HikariCP):
 - mvn -q -DskipTests clean package
 - java -jar target/hikaricp-app-1.0.0-SNAPSHOT.jar
 
-For environment configuration details (region, endpoint, credentials), see [rotating-datasource-core/README.md](../README.md).
+For environment configuration details (region, endpoint, credentials),
+see [rotating-datasource-core/README.md](../README.md).
 
 ## Structure
 

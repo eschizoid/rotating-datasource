@@ -3,8 +3,8 @@ package com.example;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.reactive.ConnectionFactoryProvider;
-import com.example.rotatingdatasource.core.secrets.DbSecret;
+import com.example.rotating.datasource.core.reactive.ConnectionFactoryProvider;
+import com.example.rotating.datasource.core.secrets.DbSecret;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -134,9 +134,7 @@ public class AppAutoRefreshIntegrationTest {
     while (System.currentTimeMillis() < deadline) {
       try {
         final var val = app.getString();
-        if (val != null && !val.isBlank()) {
-          return val;
-        }
+        if (val != null && !val.isBlank()) return val;
       } catch (final Exception exception) { // allow any transient exceptions
         if (System.currentTimeMillis() >= deadline) {
           throw new SQLException(

@@ -1,6 +1,6 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
+import com.example.rotating.datasource.core.jdbc.DataSourceFactoryProvider;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 

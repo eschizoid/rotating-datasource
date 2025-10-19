@@ -1,6 +1,6 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
+import com.example.rotating.datasource.core.jdbc.DataSourceFactoryProvider;
 import com.mchange.v2.c3p0.ComboPooledDataSource;
 
 public class Pool {

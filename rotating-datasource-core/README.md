@@ -59,12 +59,12 @@ mvn -q -pl rotating-datasource-core test
 ### Basic Usage with HikariCP
 
 ```java
-import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
-import com.example.rotatingdatasource.core.jdbc.RotatingDataSource;
+import com.example.rotating.datasource.core.jdbc.core.DataSourceFactoryProvider;
+import com.example.rotating.datasource.core.jdbc.core.RotatingDataSource;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
-DataSourceFactoryProvider factory = secret -> {
+final var factory = secret -> {
     var cfg = new HikariConfig();
     cfg.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
     cfg.setUsername(secret.username());
@@ -73,19 +73,15 @@ DataSourceFactoryProvider factory = secret -> {
     return new HikariDataSource(cfg);
 };
 
-var rotatingDs = RotatingDataSource.builder()
-        .secretId("my-db-secret")
-        .factory(factory)
-        .refreshIntervalSeconds(60)
-        .build();
+final var rotatingDs = RotatingDataSource.builder()
+    .secretId("my-db-secret")
+    .factory(factory)
+    .refreshIntervalSeconds(60)
+    .build();
 
-try(
-var conn = rotatingDs.getConnection();
-var stmt = conn.createStatement()){
-var rs = stmt.executeQuery("SELECT current_user");
-  rs.
-
-next();
+try (final var conn = rotatingDs.getConnection(); final var stmt = conn.createStatement()) {
+  final var rs = stmt.executeQuery("SELECT current_user");
+  rs.next();
 }
 ```
 
@@ -93,7 +89,7 @@ next();
 
 ```java
 // Check the secret version every 60 seconds and refresh if changed
-var rotatingDs = RotatingDataSource.builder()
+final var rotatingDs = RotatingDataSource.builder()
     .secretId("my-db-secret")
     .factory(factory)
     .refreshIntervalSeconds(60)  // refresh interval in seconds
@@ -109,7 +105,7 @@ Runtime.getRuntime().addShutdownHook(new Thread(rotatingDs::shutdown));
 // Exponential backoff: 5 attempts, starting at 100ms, max 30s
 final var policy = Retry.Policy.exponential(5, 100L);
 
-var rotatingDs = RotatingDataSource.builder()
+final var rotatingDs = RotatingDataSource.builder()
     .secretId("my-db-secret")
     .factory(factory)
     .retryPolicy(policy)   // custom retry policy
@@ -120,14 +116,14 @@ var rotatingDs = RotatingDataSource.builder()
 
 ```java
 // Oracle-specific authentication error codes
-var oracleDetector = Retry.AuthErrorDetector.custom(e ->
+final var oracleDetector = Retry.AuthErrorDetector.custom(e ->
     e.getErrorCode() == 1017 ||  // ORA-01017: invalid username/password
     e.getErrorCode() == 28000    // ORA-28000: account is locked
 );
 
-var policy = Retry.Policy.fixed(3, 100L);
+final var policy = Retry.Policy.fixed(3, 100L);
 
-var rotatingDs = RotatingDataSource.builder()
+final var rotatingDs = RotatingDataSource.builder()
     .secretId("oracle-secret")
     .factory(secret -> createOracleDataSource(secret))
     .retryPolicy(policy)
@@ -137,8 +133,10 @@ var rotatingDs = RotatingDataSource.builder()
 
 ## Advanced Usage
 
-- For lower-level JDBC code paths that need per-operation retries, prefer `Retry.onException(...)` with a `Retry.Policy`.
-- ORMs usually do not need extra wrappers; optionally use `Retry.authRetry(...)` for long-running units of work that may straddle a rotation and surface an auth-related SQLException.
+- For lower-level JDBC code paths that need per-operation retries, prefer `Retry.onException(...)` with a
+  `Retry.Policy`.
+- ORMs usually do not need extra wrappers; optionally use `Retry.authRetry(...)` for long-running units of work that may
+  straddle a rotation and surface an auth-related SQLException.
 
 ### Spring Boot Integration
 
@@ -150,7 +148,7 @@ public class DataSourceConfig {
     @Bean
     public RotatingDataSource rotatingDataSource() {
         final var factory = secret -> {
-            var config = new HikariConfig();
+            final var config = new HikariConfig();
             config.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
             config.setUsername(secret.username());
             config.setPassword(secret.password());
@@ -230,14 +228,14 @@ try (var conn = rotatingDs.getConnection()) {
 
 ```java
 // Primary database
-var primaryDs = RotatingDataSource.builder()
+final var primaryDs = RotatingDataSource.builder()
     .secretId("primary-db-secret")
     .factory(secret -> createHikariDataSource(secret, false))
     .refreshIntervalSeconds(60L)
     .build();
 
 // Read replica (read-only)
-var replicaDs = RotatingDataSource.builder()
+final var replicaDs = RotatingDataSource.builder()
     .secretId("replica-db-secret")
     .factory(secret -> {
         var config = new HikariConfig();
@@ -289,13 +287,13 @@ The library includes detection for common authentication errors:
 
 ```java
 // Add custom error codes
-var customDetector = Retry.AuthErrorDetector.custom(e ->
+final var customDetector = Retry.AuthErrorDetector.custom(e ->
     e.getErrorCode() == 12345 ||
     e.getMessage().contains("authentication failed")
 );
 
 // Combine with default detector
-var combined = Retry.AuthErrorDetector.defaultDetector().or(customDetector);
+final var combined = Retry.AuthErrorDetector.defaultDetector().or(customDetector);
 ```
 
 ## Testing
@@ -385,7 +383,7 @@ MySQL example:
 PostgreSQL
 
 ```java
-var ds = RotatingDataSource.builder()
+final var ds = RotatingDataSource.builder()
         .secretId("rds/postgres/app")
         .factory(secret -> {
             var cfg = new HikariConfig();
@@ -405,7 +403,7 @@ var ds = RotatingDataSource.builder()
 MySQL/Aurora MySQL (with dual-password overlap in rotation procedure)
 
 ```java
-var ds = RotatingDataSource.builder()
+final var ds = RotatingDataSource.builder()
         .secretId("rds/mysql/app")
         .factory(secret -> {
             var cfg = new HikariConfig();
@@ -468,5 +466,6 @@ Notes:
 
 ## Related
 
-- See [connection-pool-examples/README.md](../rotating-data-source-connection-pool-examples/README.md) for complete runnable examples with HikariCP
+- See [connection-pool-examples/README.md](../rotating-data-source-connection-pool-examples/README.md) for complete
+  runnable examples with HikariCP
 - See [README.md](../README.md) for overall project documentation

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
@@ -17,6 +17,7 @@
         <module>jooq-app</module>
         <module>jpa-app</module>
         <module>spring-data-app</module>
+        <module>spring-data-reactive-app</module>
     </modules>
 
     <properties>
@@ -25,6 +26,8 @@
         <jackson.version>2.20.0</jackson.version>
         <junit.jupiter.version>5.13.4</junit.jupiter.version>
         <postgresql.version>42.7.7</postgresql.version>
+        <r2dbc.postgresql.version>1.1.0.RELEASE</r2dbc.postgresql.version>
+        <r2dbc.pool.version>1.0.2.RELEASE</r2dbc.pool.version>
         <testcontainers.version>1.21.3</testcontainers.version>
     </properties>
 
@@ -40,6 +43,17 @@
                 <artifactId>HikariCP</artifactId>
                 <version>${hikari.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>r2dbc-postgresql</artifactId>
+                <version>${r2dbc.postgresql.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.r2dbc</groupId>
+                <artifactId>r2dbc-pool</artifactId>
+                <version>${r2dbc.pool.version}</version>
+            </dependency>
+
             <dependency>
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>

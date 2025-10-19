@@ -1,6 +1,8 @@
 # Rotating Data Source—ORM Examples
 
-Runnable ORM integrations showing how to wire `RotatingDataSource` into popular Java ORM stacks. ORMs inherit automatic connection-acquisition retry via `RotatingDataSource`; `Retry.authRetry` is optional for long-running units of work that may straddle a rotation and surface an auth-related `SQLException`.
+Runnable ORM integrations showing how to wire `RotatingDataSource` into popular Java ORM stacks. ORMs inherit automatic
+connection-acquisition retry via `RotatingDataSource`; `Retry.authRetry` is optional for long-running units of work that
+may straddle a rotation and surface an auth-related `SQLException`.
 
 ## Submodules
 

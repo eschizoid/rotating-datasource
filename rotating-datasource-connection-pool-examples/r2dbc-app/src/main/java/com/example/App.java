@@ -2,8 +2,8 @@ package com.example;
 
 import static java.lang.System.Logger.Level.DEBUG;
 
-import com.example.rotatingdatasource.core.reactive.ConnectionFactoryProvider;
-import com.example.rotatingdatasource.core.reactive.RotatingConnectionFactory;
+import com.example.rotating.datasource.core.reactive.ConnectionFactoryProvider;
+import com.example.rotating.datasource.core.reactive.RotatingConnectionFactory;
 import io.r2dbc.spi.ConnectionFactory;
 import reactor.core.publisher.Mono;
 
@@ -58,8 +58,7 @@ public class App {
   }
 
   /**
-   * Queries the database for the current time using the reusable rotating connection factory. This
-   * method blocks for simplicity to mirror the JDBC example.
+   * Queries the database for the current time using the reusable rotating connection factory.
    *
    * @return the time string returned by the database
    */
