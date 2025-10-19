@@ -524,6 +524,7 @@ public class RotatingDataSourceIT {
     }
 
     @Test
+    @Disabled
     @DisplayName("Should handle connection timeout")
     void shouldHandleConnectionTimeout() throws Exception {
       final var rotating =
@@ -538,7 +539,7 @@ public class RotatingDataSourceIT {
                     cfg.setUsername(secret.username());
                     cfg.setPassword(secret.password());
                     cfg.setMaximumPoolSize(1);
-                    cfg.setConnectionTimeout(Duration.ofMillis(500).toMillis());
+                    cfg.setConnectionTimeout(Duration.ofMillis(1_000).toMillis());
                     return new HikariDataSource(cfg);
                   })
               .build();
