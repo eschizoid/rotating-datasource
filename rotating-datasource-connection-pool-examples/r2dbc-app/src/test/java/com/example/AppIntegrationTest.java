@@ -3,7 +3,7 @@ package com.example;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
+import com.example.rotatingdatasource.core.ConnectionFactoryProvider;
 import com.example.rotatingdatasource.core.DbSecret;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.DriverManager;
@@ -16,7 +16,7 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 /**
  * Integration test that exercises the App end-to-end and verifies it survives a database password
- * rotation while reusing a single RotatingDataSource instance across calls.
+ * rotation while reusing a single RotatingConnectionFactory instance across calls.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
@@ -78,12 +78,12 @@ public class AppIntegrationTest {
    *   <li>The first call should succeed.
    *   <li>Rotates DB password and updates the secret.
    *   <li>Uses the current password from Secrets Manager to alter the user.
-   *   <li>The second call must reuse the same RotatingDataSource instance and succeed after
+   *   <li>The second call must reuse the same RotatingConnectionFactory instance and succeed after
    *       rotation.
    * </ul>
    */
   @Test
-  void survivesRotationWithSingleRotatingDataSource() throws Exception {
+  void survivesRotationWithSingleRotatingConnectionFactory() throws Exception {
     final var app = new App(SECRET_ID, buildFactory());
 
     final var first = app.getString();
@@ -117,8 +117,8 @@ public class AppIntegrationTest {
     assertFalse(second.isBlank());
   }
 
-  private DataSourceFactoryProvider buildFactory() {
-    return Pool.hikariFactory;
+  private ConnectionFactoryProvider buildFactory() {
+    return Pool.r2dbcPoolFactory;
   }
 
   private String buildSecretJson(String password) {

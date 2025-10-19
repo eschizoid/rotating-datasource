@@ -162,7 +162,7 @@ public class DbClientIT {
     assertEquals(2, attemptCounter.get());
   }
 
-  private DataSourceFactory hikariFactory() {
+  private DataSourceFactoryProvider hikariFactory() {
     return secret -> {
       final var cfg = new HikariConfig();
       final var url =

@@ -1,13 +1,13 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.DataSourceFactory;
+import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
 public class Pool {
 
   /** Public factory for HikariCP DataSource instances built from a DbSecret. */
-  public static final DataSourceFactory hikariFactory =
+  public static final DataSourceFactoryProvider hikariFactory =
       secret -> {
         final var jdbcUrl =
             String.format(

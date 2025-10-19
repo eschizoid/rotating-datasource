@@ -3,10 +3,12 @@ package com.example;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
+import com.example.rotatingdatasource.core.ConnectionFactoryProvider;
 import com.example.rotatingdatasource.core.DbSecret;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.time.Duration;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 import org.testcontainers.containers.GenericContainer;
@@ -15,14 +17,14 @@ import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 /**
- * Integration test that exercises the App end-to-end and verifies it survives a database password
- * rotation while reusing a single RotatingDataSource instance across calls.
+ * Integration test that exercises the R2DBC App end-to-end and verifies it auto-refreshes after a
+ * secret version change while reusing a single RotatingConnectionFactory instance across calls.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
-public class AppIntegrationTest {
+public class AppAutoRefreshIntegrationTest {
 
-  private static final String SECRET_ID = "db/secret";
+  private static final String SECRET_ID = "db/secret-autorefresh";
   private static final DockerImageName LOCALSTACK_IMAGE =
       DockerImageName.parse("localstack/localstack:3");
   private static final DockerImageName POSTGRES_IMAGE = DockerImageName.parse("postgres:17");
@@ -30,6 +32,7 @@ public class AppIntegrationTest {
   private PostgreSQLContainer<?> postgres;
   private GenericContainer<?> localstack;
   private SecretsManagerClient secretsClient;
+  private App app;
 
   @BeforeAll
   void setup() {
@@ -57,10 +60,16 @@ public class AppIntegrationTest {
     // Create a secret that matches DbSecret structure and points to our PostgreSQLContainer
     final var initialSecretJson = buildSecretJson(postgres.getPassword());
     secretsClient.createSecret(r -> r.name(SECRET_ID).secretString(initialSecretJson));
+
+    // Build an App that uses a RotatingConnectionFactory with proactive refresh every 1 second
+    app = new App(SECRET_ID, buildFactory(), 1L);
   }
 
   @AfterAll
   void cleanup() {
+    if (app != null) {
+      app.shutdown();
+    }
     if (secretsClient != null) {
       try {
         secretsClient.close();
@@ -72,35 +81,36 @@ public class AppIntegrationTest {
   }
 
   /**
-   * Integration test for App:
+   * Integration test for App with proactive auto-refresh enabled:
    *
    * <ul>
    *   <li>The first call should succeed.
-   *   <li>Rotates DB password and updates the secret.
-   *   <li>Uses the current password from Secrets Manager to alter the user.
-   *   <li>The second call must reuse the same RotatingDataSource instance and succeed after
-   *       rotation.
+   *   <li>Rotates DB password and updates the secret, producing a new version.
+   *   <li>Waits for the scheduler to detect the change and refresh the pool (no DbClient reactive
+   *       retry).
+   *   <li>Later App calls succeed using the refreshed pool.
    * </ul>
    */
   @Test
-  void survivesRotationWithSingleRotatingDataSource() throws Exception {
-    final var app = new App(SECRET_ID, buildFactory());
-
+  void autoRefreshesAfterSecretVersionChange() throws Exception {
+    // Initial call should succeed using the initial credentials
     final var first = app.getString();
     assertNotNull(first);
     assertFalse(first.isBlank());
 
-    final var newPass = "rotated456";
+    // Rotate: compute a new password, fetch the current password from Secrets Manager for ALTER
+    // USER
+    final var newPass = "autoRotate789";
     final var currentJson = secretsClient.getSecretValue(r -> r.secretId(SECRET_ID)).secretString();
     final var currentSecret = new ObjectMapper().readValue(currentJson, DbSecret.class);
-    final var currentPassword = currentSecret.password();
 
+    // Change DB password using the currently valid password
     final var jdbcUrl =
         "jdbc:postgresql://%s:%d/%s"
             .formatted(
                 postgres.getHost(), postgres.getFirstMappedPort(), postgres.getDatabaseName());
     try (final var conn =
-        DriverManager.getConnection(jdbcUrl, postgres.getUsername(), currentPassword)) {
+        DriverManager.getConnection(jdbcUrl, postgres.getUsername(), currentSecret.password())) {
       conn.createStatement()
           .execute(
               """
@@ -109,19 +119,41 @@ public class AppIntegrationTest {
                   .formatted(postgres.getUsername(), newPass));
     }
 
+    // Update the secret in Secrets Manager (new version)
     final var rotatedJson = buildSecretJson(newPass);
     secretsClient.putSecretValue(r -> r.secretId(SECRET_ID).secretString(rotatedJson));
 
-    final var second = app.getString();
-    assertNotNull(second);
-    assertFalse(second.isBlank());
+    // Await up to ~10 seconds for the scheduler (1s interval) to detect the change and refresh
+    final var deadline = System.currentTimeMillis() + Duration.ofSeconds(10).toMillis();
+    final var result = retryUntilSuccess(deadline);
+    assertNotNull(result);
+    assertFalse(result.isBlank());
   }
 
-  private DataSourceFactoryProvider buildFactory() {
-    return Pool.hikariFactory;
+  private String retryUntilSuccess(long deadline) throws SQLException, InterruptedException {
+    while (System.currentTimeMillis() < deadline) {
+      try {
+        final var val = app.getString();
+        if (val != null && !val.isBlank()) {
+          return val;
+        }
+      } catch (final Exception exception) { // allow any transient exceptions
+        if (System.currentTimeMillis() >= deadline) {
+          throw new SQLException(
+              "Call failed after waiting for auto-refresh: %s".formatted(exception.getMessage()),
+              exception);
+        }
+        Thread.sleep(300);
+      }
+    }
+    throw new SQLException("Timeout waiting for auto-refresh");
   }
 
-  private String buildSecretJson(String password) {
+  private ConnectionFactoryProvider buildFactory() {
+    return Pool.r2dbcPoolFactory;
+  }
+
+  private String buildSecretJson(final String password) {
     return TestSupport.buildDbSecretJson(postgres, password);
   }
 }

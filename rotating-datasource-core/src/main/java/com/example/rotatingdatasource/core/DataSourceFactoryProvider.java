@@ -7,7 +7,7 @@ import javax.sql.DataSource;
  * configure a connection pool using values from the secret.
  */
 @FunctionalInterface
-public interface DataSourceFactory {
+public interface DataSourceFactoryProvider {
   /**
    * Creates a new {@link DataSource} configured for the provided secret.
    *

@@ -1,6 +1,6 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.DataSourceFactory;
+import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
 import com.example.rotatingdatasource.core.Retry.Policy;
 import com.example.rotatingdatasource.core.RotatingDataSource;
 import com.zaxxer.hikari.HikariConfig;
@@ -61,7 +61,7 @@ public class Main {
     }
   }
 
-  static DataSourceFactory hikariFactory() {
+  static DataSourceFactoryProvider hikariFactory() {
     return secret -> {
       final var cfg = new HikariConfig();
       cfg.setJdbcUrl(

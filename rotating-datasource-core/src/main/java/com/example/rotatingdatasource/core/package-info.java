@@ -14,7 +14,7 @@
  *       Secrets Manager client (supports endpoint/region/credentials overrides).
  *   <li>{@link com.example.rotatingdatasource.core.SecretHelper} – fetches raw secret JSON and
  *       deserializes to {@code DbSecret}.
- *   <li>{@link com.example.rotatingdatasource.core.DataSourceFactory} – functional factory for
+ *   <li>{@link com.example.rotatingdatasource.core.DataSourceFactoryProvider} – functional factory for
  *       building a DataSource from a secret.
  *   <li>{@link com.example.rotatingdatasource.core.RotatingDataSource} – wraps a DataSource and
  *       recreates it on demand.

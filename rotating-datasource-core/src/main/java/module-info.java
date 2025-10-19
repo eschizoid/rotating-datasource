@@ -13,6 +13,8 @@
 module com.example.smrotator.core {
   requires java.sql;
   requires java.logging;
+  requires r2dbc.spi;
+  requires reactor.core;
   requires software.amazon.awssdk.auth;
   requires software.amazon.awssdk.regions;
   requires software.amazon.awssdk.services.secretsmanager;
