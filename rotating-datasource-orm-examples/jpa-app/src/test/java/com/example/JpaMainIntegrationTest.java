@@ -115,7 +115,7 @@ public class JpaMainIntegrationTest {
           "-U",
           postgres.getUsername(),
           "-c",
-          "ALTER USER " + postgres.getUsername() + " WITH PASSWORD '" + newPassword + "';");
+          "ALTER USER %s WITH PASSWORD '%s';".formatted(postgres.getUsername(), newPassword));
 
       smClient.updateSecret(r -> r.secretId(SECRET_ID).secretString(pgSecretJson(newPassword)));
       SecretsManagerProvider.resetCache();
@@ -142,8 +142,8 @@ public class JpaMainIntegrationTest {
         for (int i = 0; i < 10; i++) {
           em.createNativeQuery(
                   "INSERT INTO test_users (username, email) VALUES (:username, :email) ON CONFLICT DO NOTHING")
-              .setParameter("username", "u" + i)
-              .setParameter("email", "u" + i + "@example.com")
+              .setParameter("username", "u%d".formatted(i))
+              .setParameter("email", "u%d@example.com".formatted(i))
               .executeUpdate();
         }
         em.getTransaction().commit();
@@ -204,7 +204,7 @@ public class JpaMainIntegrationTest {
                     em.getTransaction().begin();
                     em.createNativeQuery("INSERT INTO test_users (username, email) VALUES (:u, :e)")
                         .setParameter("u", "w%d_%d".formatted(w, System.nanoTime()))
-                        .setParameter("e", "w" + w + "@example.com")
+                        .setParameter("e", "w%d@example.com".formatted(w))
                         .executeUpdate();
                     em.getTransaction().commit();
                   }
@@ -257,8 +257,8 @@ public class JpaMainIntegrationTest {
         for (int i = 0; i < 100; i++) {
           em.createNativeQuery(
                   "INSERT INTO test_users (username, email) VALUES (:username, :email)")
-              .setParameter("username", "user" + i)
-              .setParameter("email", "user" + i + "@example.com")
+              .setParameter("username", "user%d".formatted(i))
+              .setParameter("email", "user%d@example.com".formatted(i))
               .executeUpdate();
         }
         em.getTransaction().commit();
@@ -295,7 +295,8 @@ public class JpaMainIntegrationTest {
                   "-U",
                   postgres.getUsername(),
                   "-c",
-                  "ALTER USER " + postgres.getUsername() + " WITH PASSWORD '" + newPassword + "';");
+                  "ALTER USER %s WITH PASSWORD '%s';"
+                      .formatted(postgres.getUsername(), newPassword));
 
               smClient.updateSecret(
                   r -> r.secretId(SECRET_ID).secretString(pgSecretJson(newPassword)));
@@ -342,7 +343,7 @@ public class JpaMainIntegrationTest {
                         var updated =
                             em.createNativeQuery(
                                     "UPDATE test_users SET email = :email, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
-                                .setParameter("email", "updated" + workerId + "@example.com")
+                                .setParameter("email", "updated%d@example.com".formatted(workerId))
                                 .setParameter("id", (workerId % 100) + 1)
                                 .executeUpdate();
                         em.getTransaction().commit();
@@ -354,7 +355,7 @@ public class JpaMainIntegrationTest {
                                 "INSERT INTO test_users (username, email) VALUES (:username, :email)")
                             .setParameter(
                                 "username", "temp_%d_%d".formatted(workerId, System.nanoTime()))
-                            .setParameter("email", "temp" + workerId + "@example.com")
+                            .setParameter("email", "temp%d@example.com".formatted(workerId))
                             .executeUpdate();
                         em.createNativeQuery(
                                 "DELETE FROM test_users WHERE id IN (SELECT id FROM test_users WHERE username LIKE 'temp_%' ORDER BY id LIMIT 1)")
@@ -431,11 +432,12 @@ public class JpaMainIntegrationTest {
       assertTrue(rotationCount.get() >= 1, "Should perform at least one password rotation");
       assertTrue(
           successfulOps.get() > 50,
-          "Should complete many operations successfully. Completed: " + successfulOps.get());
+          "Should complete many operations successfully. Completed: %d"
+              .formatted(successfulOps.get()));
       assertTrue(
           errors.isEmpty(),
-          "No errors should occur during rotations with internal retry handling. Found: "
-              + errors.stream().map(Throwable::getMessage).collect(joining(", ")));
+          "No errors should occur during rotations with internal retry handling. Found: %s"
+              .formatted(errors.stream().map(Throwable::getMessage).collect(joining(", "))));
     } finally {
       Main.shutdownRotating();
     }

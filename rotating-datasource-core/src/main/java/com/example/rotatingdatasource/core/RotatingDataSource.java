@@ -88,6 +88,48 @@ import javax.sql.DataSource;
  *     .gracePeriod(Duration.ofMinutes(2))
  *     .build();
  * }</pre>
+ *
+ * <h2>JDBC vs ORM usage</h2>
+ *
+ * <ul>
+ *   <li>JDBC: create the RotatingDataSource via the builder and use it anywhere a normal
+ *       javax.sql.DataSource is accepted. All connection acquisition automatically retries on auth
+ *       and transient errors. No extra APIs are needed.
+ *   <li>ORMs (Hibernate, JPA, Spring Data, jOOQ): inject RotatingDataSource as the DataSource.
+ *       Connection acquisition inherits the same retry behavior. In rare cases where a long
+ *       transaction spans a password change mid-flight, you may wrap the unit-of-work in
+ *       Retry.authRetry(() -> doWork(), this, detector), but this is typically unnecessary.
+ * </ul>
+ *
+ * <h2>Builder properties</h2>
+ *
+ * <ul>
+ *   <li><b>secretId</b>: Secrets Manager ID/name of the DB secret (required).
+ *   <li><b>factory</b>: function that creates a DataSource (usually a pool like HikariCP) from the
+ *       current DbSecret (required).
+ *   <li><b>refreshIntervalSeconds</b>: if > 0, periodically checks the secret version and refreshes
+ *       proactively. Useful to minimize the auth-failure window when rotation occurs.
+ *   <li><b>retryPolicy</b>: policy for transient retries around connection acquisition. Defaults to
+ *       exponential backoff with jitter.
+ *   <li><b>authErrorDetector</b>: pluggable detector for vendor-specific auth errors (e.g.,
+ *       ORA-01017, MySQL 1045, PostgreSQL 28P01).
+ *   <li><b>overlapDuration</b>: when non-zero, keeps the previous pool as a temporary secondary and
+ *       falls back to it on auth failures during the overlap window. Use for RDS engines that
+ *       support dual-password overlap (e.g., some MySQL/Aurora flows). Default 15 minutes.
+ *   <li><b>gracePeriod</b>: when overlap is zero, keeps the old pool alive for this period so
+ *       in-flight work can finish, then closes it. Recommended for PostgreSQL. Default 60 seconds.
+ * </ul>
+ *
+ * <h2>AWS RDS + Secrets Manager</h2>
+ *
+ * <ul>
+ *   <li><b>MySQL/Aurora MySQL</b>: if your rotation procedure retains the old password concurrently
+ *       with the new one, set a non-zero overlapDuration to enable safe fallback during the
+ *       cutover.
+ *   <li><b>PostgreSQL</b>: old passwords usually become invalid immediately. Set overlapDuration to
+ *       Duration.ZERO and rely on gracePeriod to drain in-flight sessions; new attempts will
+ *       transparently retry and connect using the refreshed pool.
+ * </ul>
  */
 public final class RotatingDataSource implements DataSource {
 
@@ -222,7 +264,7 @@ public final class RotatingDataSource implements DataSource {
     /**
      * Sets the retry policy for authentication failures.
      *
-     * <p>Default: exponential backoff (10 attempts, starting at 1 second)
+     * <p>Default: exponential backoff (20 attempts, starting at 15 seconds)
      *
      * @param retryPolicy the retry policy
      * @return this builder
@@ -251,7 +293,8 @@ public final class RotatingDataSource implements DataSource {
      * <p>During this period after a refresh, both old and new credentials remain valid. This
      * supports zero-downtime rotation for databases like AWS RDS that support dual passwords.
      *
-     * <p>Default: 15 minutes
+     * <p>Default: 15 minutes (enabled). Set to {@code Duration.ZERO} to disable when your engine
+     * does not support dual-password overlap (e.g., standard PostgreSQL).
      *
      * @param overlapDuration how long to keep old credentials valid
      * @return this builder

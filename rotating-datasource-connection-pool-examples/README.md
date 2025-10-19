@@ -1,14 +1,14 @@
 # Rotating Data Source—Connection Pool Examples
 
-Sample runnable apps that demonstrate using sm-core with popular JDBC connection pools. Each submodule is a minimal app
-with tests that show automatic recovery from AWS Secrets Manager password rotation.
+Sample runnable apps that demonstrate using the core library with popular JDBC connection pools. Each submodule is a 
+minimal app with tests that show automatic recovery from AWS Secrets Manager password rotation.
 
 Submodules:
 
 - `c3p0-app` — uses C3P0
 - `dbcp2-app` — uses Apache Commons DBCP2
 - `hikaricp-app` — uses HikariCP
-  - `tomcat-jdbc-app` — uses Apache Tomcat JDBC pool
+- `tomcat-jdbc-app` — uses Apache Tomcat JDBC pool
 
 ## Requirements
 
@@ -20,7 +20,7 @@ Submodules:
 
 From the repository root:
 
-- `mvn -q -pl connection-pool-examples -am -DskipTests clean package` — build jars without tests
+- `mvn -q -pl rotating-datasource-connection-pool-examples -am -DskipTests clean package` — build jars without tests
 
 Artifacts are produced under each submodule’s target/ directory.
 
@@ -31,8 +31,8 @@ root README Testing section for an overview.
 
 Commands:
 
-- `mvn -q -pl connection-pool-examples -am clean test` — run tests (requires Docker)
-- `mvn -q -Dtests.integration.disable=true -pl connection-pool-examples -am clean test` — skip integration tests
+- `mvn -q -pl rotating-datasource-connection-pool-examples -am clean test` — run tests (requires Docker)
+- `mvn -q -Dtests.integration.disable=true -pl rotating-datasource-connection-pool-examples -am clean test` — skip integration tests
 
 ## Run an example app
 
@@ -45,7 +45,7 @@ Example (HikariCP):
 - mvn -q -DskipTests clean package
 - java -jar target/hikaricp-app-1.0.0-SNAPSHOT.jar
 
-For environment configuration details (region, endpoint, credentials), see sm-core/README.md.
+For environment configuration details (region, endpoint, credentials), see [rotating-datasource-core/README.md](../README.md).
 
 ## Structure
 
@@ -60,6 +60,6 @@ For environment configuration details (region, endpoint, credentials), see sm-co
 
 ## See also
 
-- Core library: [sm-core/README.md](../rotating-data-source-core/README.md)
-- ORM examples: [orm-examples/README.md](../rotating-data-source-orm-examples/README.md)
+- Core library: [rotating-datasource-core/README.md](../rotating-datasource-core/README.md)
+- ORM examples: [rotating-datasource-orm-examples/README.md](../rotating-datasource-orm-examples/README.md)
 - Project overview: [README.md](../README.md)

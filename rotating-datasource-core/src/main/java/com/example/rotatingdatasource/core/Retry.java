@@ -10,32 +10,46 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
- * Internal retry helper for {@link RotatingDataSource}.
+ * Retry utilities used by {@link RotatingDataSource} and optionally available for advanced use in
+ * applications.
  *
- * <p>Provides retry logic for authentication failures and transient connection errors during
- * credential rotation.
+ * <p>Provides two categories of behavior:
  *
- * <p><strong>This class is package-private and not intended for application use.</strong> {@link
- * RotatingDataSource} handles all retry logic automatically. *
+ * <ul>
+ *   <li><b>Automatic</b> — When you use RotatingDataSource, authentication and transient connection
+ *       failures during {@code getConnection()} are handled automatically. ORMs using the
+ *       DataSource inherit this behavior. No direct use of this class is required for the common
+ *       case.
+ *   <li><b>Opt-in (advanced)</b> — For JDBC code paths where you want additional retries around a
+ *       particular operation, use {@link #onException(SqlExceptionSupplier,
+ *       java.util.function.Predicate, Runnable, Policy)}. For ORM unit-of-work retries across a
+ *       password cutover, you may wrap the operation with {@link
+ *       #authRetry(java.util.function.Supplier, RotatingDataSource, AuthErrorDetector)}. Most
+ *       applications won't need this.
+ * </ul>
  *
- * <h2>RotatingDataSource Integration</h2>
+ * <h2>Typical usage</h2>
  *
- * <p>{@link RotatingDataSource} automatically retries {@code getConnection()} on auth failures and
- * transient errors. ORM frameworks using it inherit this behavior:
+ * <p>JDBC (optional, advanced):
  *
  * <pre>{@code
- * // No explicit retry needed - auth/transient failures handled automatically
- * var rotatingDs = new RotatingDataSource(secretId, factory);
+ * final var policy = Retry.Policy.exponential(5, 100L);
+ * final var list = Retry.onException(
+ *     () -> jdbcTemplate.query("SELECT * FROM t", mapper),
+ *     SQLException::isTransient,
+ *     () -> {},
+ *     policy
+ * );
+ * }</pre>
  *
- * // Hibernate
- * var sessionFactory = new Configuration()
- *     .setProperty("hibernate.connection.datasource", rotatingDs)
- *     .buildSessionFactory();
+ * <p>ORMs (rarely needed):
  *
- * // Auth/transient failures during connection acquisition are retried automatically
- * try (var session = sessionFactory.openSession()) {
- *     var users = session.createQuery("FROM User", User.class).list();
- * }
+ * <pre>{@code
+ * final var users = Retry.authRetry(
+ *     () -> entityManager.createQuery("FROM User", User.class).getResultList(),
+ *     rotatingDataSource,
+ *     Retry.AuthErrorDetector.defaultDetector()
+ * );
  * }</pre>
  *
  * @see RotatingDataSource
@@ -553,9 +567,6 @@ public final class Retry {
       final Policy policy)
       throws E {
     var attempt = 0;
-    if (policy.maxAttempts() < 1) {
-      throw new IllegalArgumentException("policy.maxAttempts must be >= 1");
-    }
     while (true) {
       attempt++;
       try {
@@ -627,8 +638,7 @@ public final class Retry {
    * @param supplier operation to execute
    * @param shouldRetry predicate determining whether the exception is retryable
    * @param beforeRetry hook to run before each retry attempt
-   * @param maxAttempts total attempts including the first (must be >= 1)
-   * @param delayMillis delay between attempts in milliseconds (non-negative)
+   * @param policy retry policy configuration
    * @param listener listener to be notified of retry events
    * @param <T> result type
    * @param <E> exception type extending SQLException
@@ -639,11 +649,9 @@ public final class Retry {
       final SqlExceptionSupplier<T, E> supplier,
       final Predicate<E> shouldRetry,
       final Runnable beforeRetry,
-      final int maxAttempts,
-      final long delayMillis,
+      final Policy policy,
       final RetryListener listener)
       throws E {
-    if (maxAttempts < 1) throw new IllegalArgumentException("maxAttempts must be >= 1");
     var attempt = 0;
     while (true) {
       attempt++;
@@ -653,7 +661,7 @@ public final class Retry {
         @SuppressWarnings("unchecked")
         final E typedException = (E) ex;
 
-        if (!shouldRetry.test(typedException) || attempt >= maxAttempts) {
+        if (!shouldRetry.test(typedException) || attempt >= policy.maxAttempts()) {
           throw typedException;
         }
 
@@ -662,9 +670,10 @@ public final class Retry {
         LOGGER.log(DEBUG, "Attempt {0} failed, retrying with listener...", attempt);
         beforeRetry.run();
 
-        if (delayMillis > 0) {
+        final long delay = policy.calculateDelay(attempt);
+        if (delay > 0) {
           try {
-            Thread.sleep(delayMillis);
+            Thread.sleep(delay);
           } catch (final InterruptedException ie) {
             Thread.currentThread().interrupt();
             throw typedException;

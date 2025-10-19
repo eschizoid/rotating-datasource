@@ -149,8 +149,8 @@ public class JooqMainIntegrationTest {
       for (int i = 0; i < 10; i++) {
         dsl.execute(
             "INSERT INTO test_users (username, email) VALUES (?, ?) ON CONFLICT DO NOTHING",
-            "u" + i,
-            "u" + i + "@example.com");
+            "u%d".formatted(i),
+            "u%d@example.com".formatted(i));
       }
 
       final int holders = 8;
@@ -210,7 +210,7 @@ public class JooqMainIntegrationTest {
                     dsl.execute(
                         "INSERT INTO test_users (username, email) VALUES (?, ?)",
                         "w%d_%d".formatted(w, System.nanoTime()),
-                        "w" + w + "@example.com");
+                        "w%d@example.com".formatted(w));
                   } catch (final Throwable t) {
                     workerErrors.add(t);
                   }
@@ -274,8 +274,8 @@ public class JooqMainIntegrationTest {
       for (int i = 0; i < 100; i++) {
         dsl.execute(
             "INSERT INTO test_users (username, email) VALUES (?, ?)",
-            "user" + i,
-            "user" + i + "@example.com");
+            "user%d".formatted(i),
+            "user%d@example.com".formatted(i));
       }
 
       final var testDuration = Duration.ofSeconds(20);
@@ -297,7 +297,7 @@ public class JooqMainIntegrationTest {
             }
             try {
               final var rotation = rotationCount.incrementAndGet();
-              final var newPassword = "rotated_pass_" + rotation;
+              final var newPassword = "rotated_pass_%d".formatted(rotation);
 
               LOGGER.log(
                   INFO,
@@ -311,7 +311,8 @@ public class JooqMainIntegrationTest {
                   "-U",
                   postgres.getUsername(),
                   "-c",
-                  "ALTER USER " + postgres.getUsername() + " WITH PASSWORD '" + newPassword + "';");
+                  "ALTER USER %s WITH PASSWORD '%s';"
+                      .formatted(postgres.getUsername(), newPassword));
 
               // Update secret in Secrets Manager
               smClient.updateSecret(
@@ -358,7 +359,7 @@ public class JooqMainIntegrationTest {
                         final var updated =
                             dsl.execute(
                                 "UPDATE test_users SET email = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                                "updated" + workerId + "@example.com",
+                                "updated%d@example.com".formatted(workerId),
                                 (workerId % 100) + 1);
                         if (updated > 0) successfulOps.incrementAndGet();
                       }
@@ -366,7 +367,7 @@ public class JooqMainIntegrationTest {
                         dsl.execute(
                             "INSERT INTO test_users (username, email) VALUES (?, ?)",
                             "temp_%d_%d".formatted(workerId, System.nanoTime()),
-                            "temp" + workerId + "@example.com");
+                            "temp%d@example.com".formatted(workerId));
                         dsl.execute(
                             "DELETE FROM test_users WHERE id IN (SELECT id FROM test_users WHERE username LIKE 'temp_%' ORDER BY id LIMIT 1)");
                         successfulOps.incrementAndGet();
@@ -433,7 +434,9 @@ public class JooqMainIntegrationTest {
 
       // Verify data integrity
       final var count =
-          dsl.fetchOne("SELECT COUNT(*) FROM test_users").get(0, Long.class).intValue();
+          Objects.requireNonNull(dsl.fetchOne("SELECT COUNT(*) FROM test_users"))
+              .get(0, Long.class)
+              .intValue();
       assertTrue(count >= 100, "Should have at least initial 100 records");
 
       // Assertions
@@ -443,11 +446,12 @@ public class JooqMainIntegrationTest {
       assertTrue(rotationCount.get() >= 1, "Should perform at least one password rotation");
       assertTrue(
           successfulOps.get() > 50,
-          "Should complete many operations successfully. Completed: " + successfulOps.get());
+          "Should complete many operations successfully. Completed: %d"
+              .formatted(successfulOps.get()));
       assertTrue(
           errors.isEmpty(),
-          "No errors should occur during rotations with internal retry handling. Found: "
-              + errors.stream().map(Throwable::getMessage).collect(joining(", ")));
+          "No errors should occur during rotations with internal retry handling. Found: %s"
+              .formatted(errors.stream().map(Throwable::getMessage).collect(joining(", "))));
 
     } finally {
       Main.shutdownRotating();

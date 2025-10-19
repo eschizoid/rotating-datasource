@@ -1,7 +1,6 @@
 # Rotating Data Source—ORM Examples
 
-Runnable ORM integrations showing how to wire `RotatingDataSource` into popular Java ORM stacks and how to wrap ORM
-calls with `Retry.authRetry` to refresh credentials and retry once on authentication failures.
+Runnable ORM integrations showing how to wire `RotatingDataSource` into popular Java ORM stacks. ORMs inherit automatic connection-acquisition retry via `RotatingDataSource`; `Retry.authRetry` is optional for long-running units of work that may straddle a rotation and surface an auth-related `SQLException`.
 
 ## Submodules
 
@@ -26,7 +25,7 @@ calls with `Retry.authRetry` to refresh credentials and retry once on authentica
 
 All examples use the core module’s `SecretsManagerProvider` configuration. See the canonical list and details in:
 
-- [sm-core/README.md](../sm-core/README.md)
+- [rotating-datasource-core/README.md](../rotating-datasource-core/README.md)
 
 At minimum, provide:
 
@@ -37,7 +36,7 @@ At minimum, provide:
 
 From the repository root:
 
-- mvn -q -pl orm-examples -am -DskipTests clean package — build all ORM examples
+- mvn -q -pl rotating-datasource-orm-examples -am -DskipTests clean package — build all ORM examples
 
 ## Run
 
@@ -46,28 +45,28 @@ the examples only perform a simple query (e.g., `select now()` or `select 1`).
 
 **Hibernate**:
 
-- `cd orm-examples/hibernate-app`
+- `cd rotating-datasource-orm-examples/hibernate-app`
 - `mvn -q -DskipTests clean package`
 - `java -jar target/hibernate-app-1.0.0-SNAPSHOT.jar -Ddb.secretId=your/secret/id`
 - `Or via Maven: mvn -q exec:java -Ddb.secretId=your/secret/id`
 
 **JPA**:
 
-- `cd orm-examples/jpa-app`
+- `cd rotating-datasource-orm-examples/jpa-app`
 - `mvn -q -DskipTests clean package`
 - `java -jar target/jpa-app-1.0.0-SNAPSHOT.jar -Ddb.secretId=your/secret/id`
 - `Or via Maven: mvn -q exec:java -Ddb.secretId=your/secret/id`
 
 **jOOQ**:
 
-- `cd orm-examples/jooq-app`
+- `cd rotating-datasource-orm-examples/jooq-app`
 - `mvn -q -DskipTests clean package`
 - `java -jar target/jooq-app-1.0.0-SNAPSHOT.jar -Ddb.secretId=your/secret/id`
 - Or via Maven: `mvn -q exec:java -Ddb.secretId=your/secret/id`
 
 **Spring Data (Spring Boot)**:
 
-- `cd orm-examples/spring-data-app`
+- `cd rotating-datasource-orm-examples/spring-data-app`
 - `mvn -q -DskipTests clean package`
 - `java -jar target/spring-data-app-1.0.0-SNAPSHOT.jar -Ddb.secretId=your/secret/id`
 - Or via Maven: `mvn -q spring-boot:run -Ddb.secretId=your/secret/id`
@@ -80,7 +79,7 @@ the examples only perform a simple query (e.g., `select now()` or `select 1`).
 
 ## See also
 
-- Core library: [sm-core/README.md](../rotating-data-source-core/README.md)
+- Core library: [rotating-datasource-core/README.md](../rotating-datasource-core/README.md)
 - Connection pool
-  examples: [connection-pool-examples/README.md](../rotating-data-source-connection-pool-examples/README.md)
+  examples: [rotating-datasource-connection-pool-examples/README.md](../rotating-datasource-connection-pool-examples/README.md)
 - Project overview: [README.md](../README.md)

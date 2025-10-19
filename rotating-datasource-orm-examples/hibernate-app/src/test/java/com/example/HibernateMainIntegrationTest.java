@@ -147,8 +147,8 @@ public class HibernateMainIntegrationTest {
           session
               .createNativeMutationQuery(
                   "INSERT INTO test_users (username, email) VALUES (:username, :email) ON CONFLICT DO NOTHING")
-              .setParameter("username", "u" + i)
-              .setParameter("email", "u" + i + "@example.com")
+              .setParameter("username", "u%d".formatted(i))
+              .setParameter("email", "u%d@example.com".formatted(i))
               .executeUpdate();
         }
         tx.commit();
@@ -215,7 +215,7 @@ public class HibernateMainIntegrationTest {
                         .createNativeMutationQuery(
                             "INSERT INTO test_users (username, email) VALUES (:u, :e)")
                         .setParameter("u", "w%d_%d".formatted(w, System.nanoTime()))
-                        .setParameter("e", "w" + w + "@example.com")
+                        .setParameter("e", "w%d@example.com".formatted(w))
                         .executeUpdate();
                     tx.commit();
                   }
@@ -277,8 +277,8 @@ public class HibernateMainIntegrationTest {
           session
               .createNativeMutationQuery(
                   "INSERT INTO test_users (username, email) VALUES (:username, :email)")
-              .setParameter("username", "user" + i)
-              .setParameter("email", "user" + i + "@example.com")
+              .setParameter("username", "user%d".formatted(i))
+              .setParameter("email", "user%d@example.com".formatted(i))
               .executeUpdate();
         }
         tx.commit();
@@ -303,7 +303,7 @@ public class HibernateMainIntegrationTest {
             }
             try {
               final var rotation = rotationCount.incrementAndGet();
-              final var newPassword = "rotated_pass_" + rotation;
+              final var newPassword = "rotated_pass_%d".formatted(rotation);
 
               LOGGER.log(
                   INFO,
@@ -317,7 +317,8 @@ public class HibernateMainIntegrationTest {
                   "-U",
                   postgres.getUsername(),
                   "-c",
-                  "ALTER USER " + postgres.getUsername() + " WITH PASSWORD '" + newPassword + "';");
+                  "ALTER USER %s WITH PASSWORD '%s';"
+                      .formatted(postgres.getUsername(), newPassword));
 
               // Update secret in Secrets Manager
               smClient.updateSecret(
@@ -373,7 +374,8 @@ public class HibernateMainIntegrationTest {
                               session
                                   .createNativeMutationQuery(
                                       "UPDATE test_users SET email = :email, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
-                                  .setParameter("email", "updated" + workerId + "@example.com")
+                                  .setParameter(
+                                      "email", "updated%d@example.com".formatted(workerId))
                                   .setParameter("id", (workerId % 100) + 1)
                                   .executeUpdate();
                           tx.commit();
@@ -390,7 +392,7 @@ public class HibernateMainIntegrationTest {
                                   "INSERT INTO test_users (username, email) VALUES (:username, :email)")
                               .setParameter(
                                   "username", "temp_%d_%d".formatted(workerId, System.nanoTime()))
-                              .setParameter("email", "temp" + workerId + "@example.com")
+                              .setParameter("email", "temp%d@example.com".formatted(workerId))
                               .executeUpdate();
 
                           // Delete oldest temp user
@@ -481,11 +483,12 @@ public class HibernateMainIntegrationTest {
       assertTrue(rotationCount.get() >= 1, "Should perform at least one password rotation");
       assertTrue(
           successfulOps.get() > 50,
-          "Should complete many operations successfully. Completed: " + successfulOps.get());
+          "Should complete many operations successfully. Completed: %d"
+              .formatted(successfulOps.get()));
       assertTrue(
           errors.isEmpty(),
-          "No errors should occur during rotations with internal retry handling. Found: "
-              + errors.stream().map(Throwable::getMessage).collect(joining(", ")));
+          "No errors should occur during rotations with internal retry handling. Found: %s"
+              .formatted(errors.stream().map(Throwable::getMessage).collect(joining(", "))));
 
     } finally {
       Main.shutdownRotating();

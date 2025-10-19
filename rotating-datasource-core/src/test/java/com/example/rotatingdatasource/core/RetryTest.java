@@ -544,8 +544,7 @@ public class RetryTest {
               },
               Retry::isAuthError,
               () -> {},
-              2,
-              0L,
+              Retry.Policy.fixed(2, 0),
               listener);
       assertEquals("done", result);
       assertEquals(1, listenerCalls.get());

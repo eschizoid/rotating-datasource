@@ -12,11 +12,16 @@
     <artifactId>rotating-datasource-core</artifactId>
 
     <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <assertj.version>3.24.2</assertj.version>
         <aws.sdk.version>2.33.9</aws.sdk.version>
         <hikari.version>5.1.0</hikari.version>
         <jackson.version>2.20.0</jackson.version>
         <junit.jupiter.version>5.13.4</junit.jupiter.version>
+        <mockito.version>5.13.0</mockito.version>
+        <mockito.inline.version>5.2.0</mockito.inline.version>
         <mockito.version>5.13.0</mockito.version>
         <mockito.inline.version>5.2.0</mockito.inline.version>
         <mysql.version>9.3.0</mysql.version>

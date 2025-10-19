@@ -14,7 +14,6 @@ credential rotations seamlessly.
   secret refresh
 - **`Retry`** — flexible retry mechanism with configurable policies (fixed delay, exponential backoff) and
   vendor-specific auth error detection
-- **`DbClient`** — executes JDBC operations with automatic retry on authentication failures
 
 ## Features
 
@@ -45,14 +44,14 @@ credential rotations seamlessly.
 From the repository root:
 
 ```bash
-# Build only sm-core
-mvn -q -pl sm-core -am -DskipTests clean package
+# Build only rotating-datasource-core
+mvn -q -pl rotating-datasource-core -am -DskipTests clean package
 
 # Run tests
-mvn -q -pl sm-core test
+mvn -q -pl rotating-datasource-core test
 
 # Artifact location
-# sm-core/target/sm-core-1.0.0-SNAPSHOT.jar
+# rotating-datasource-core/target/rotating-datasource-core-1.0.0-SNAPSHOT.jar
 ```
 
 ## Quick Start
@@ -60,30 +59,29 @@ mvn -q -pl sm-core test
 ### Basic Usage with HikariCP
 
 ```java
-
+import com.example.rotatingdatasource.core.RotatingDataSource;
+import com.example.rotatingdatasource.core.DataSourceFactory;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
-// Define how to create a DataSource from a DbSecret
-final var factory = secret -> {
-    var config = new HikariConfig();
-    config.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
-    config.setUsername(secret.username());
-    config.setPassword(secret.password());
-    config.setMaximumPoolSize(10);
-    return new HikariDataSource(config);
+DataSourceFactory factory = secret -> {
+  var cfg = new HikariConfig();
+  cfg.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
+  cfg.setUsername(secret.username());
+  cfg.setPassword(secret.password());
+  cfg.setMaximumPoolSize(10);
+  return new HikariDataSource(cfg);
 };
 
-// Create a rotating data source (default: 2 retry attempts, 50ms delay)
-final var rotatingDs = new RotatingDataSource("my-db-secret", factory);
+var rotatingDs = RotatingDataSource.builder()
+    .secretId("my-db-secret")
+    .factory(factory)
+    .refreshIntervalSeconds(60)
+    .build();
 
-// Use like any DataSource - automatic retry on auth failures
-try (var conn = rotatingDs.getConnection()) {
-    try (var stmt = conn.createStatement()) {
-        var rs = stmt.executeQuery("SELECT current_user");
-        rs.next();
-        System.out.println("Connected as: " + rs.getString(1));
-    }
+try (var conn = rotatingDs.getConnection(); var stmt = conn.createStatement()) {
+  var rs = stmt.executeQuery("SELECT current_user");
+  rs.next();
 }
 ```
 
@@ -91,11 +89,11 @@ try (var conn = rotatingDs.getConnection()) {
 
 ```java
 // Check the secret version every 60 seconds and refresh if changed
-final var rotatingDs = new RotatingDataSource(
-    "my-db-secret",
-    factory,
-    60L  // refresh interval in seconds
-);
+var rotatingDs = RotatingDataSource.builder()
+    .secretId("my-db-secret")
+    .factory(factory)
+    .refreshIntervalSeconds(60)  // refresh interval in seconds
+    .build();
 
 // Remember to shut down when done
 Runtime.getRuntime().addShutdownHook(new Thread(rotatingDs::shutdown));
@@ -107,12 +105,11 @@ Runtime.getRuntime().addShutdownHook(new Thread(rotatingDs::shutdown));
 // Exponential backoff: 5 attempts, starting at 100ms, max 30s
 final var policy = Retry.Policy.exponential(5, 100L);
 
-final var rotatingDs = new RotatingDataSource(
-    "my-db-secret",
-    factory,
-    0L,      // no proactive refresh
-    policy   // custom retry policy
-);
+var rotatingDs = RotatingDataSource.builder()
+    .secretId("my-db-secret")
+    .factory(factory)
+    .retryPolicy(policy)   // custom retry policy
+    .build();
 ```
 
 ### Vendor-Specific Error Detection
@@ -126,38 +123,18 @@ var oracleDetector = Retry.AuthErrorDetector.custom(e ->
 
 var policy = Retry.Policy.fixed(3, 100L);
 
-var rotatingDs = new RotatingDataSource(
-    "oracle-secret",
-    secret -> createOracleDataSource(secret),
-    0L,
-    policy,
-    oracleDetector
-);
+var rotatingDs = RotatingDataSource.builder()
+    .secretId("oracle-secret")
+    .factory(secret -> createOracleDataSource(secret))
+    .retryPolicy(policy)
+    .authErrorDetector(oracleDetector)
+    .build();
 ```
 
 ## Advanced Usage
 
-### Using DbClient for Higher-Level Operations
-
-```java
-final var client = new DbClient(rotatingDs);
-
-// Execute query with automatic retry
-final var users = client.executeWithRetry(conn -> {
-    try (var stmt = conn.prepareStatement("SELECT * FROM users WHERE active = ?")) {
-        stmt.setBoolean(1, true);
-        try (var rs = stmt.executeQuery()) {
-            final var result = new ArrayList<String>();
-            while (rs.next()) {
-                result.add(rs.getString("username"));
-            }
-            return result;
-        }
-    }
-});
-
-System.out.println("Active users: " + users);
-```
+- For lower-level JDBC code paths that need per-operation retries, prefer `Retry.onException(...)` with a `Retry.Policy`.
+- ORMs usually do not need extra wrappers; optionally use `Retry.authRetry(...)` for long-running units of work that may straddle a rotation and surface an auth-related SQLException.
 
 ### Spring Boot Integration
 
@@ -203,7 +180,11 @@ public class DataSourceConfig {
 
 ```java
 // Configure Hibernate to use RotatingDataSource
-final var rotatingDs = new RotatingDataSource("my-db-secret", factory, 60L);
+final var rotatingDs = RotatingDataSource.builder()
+    .secretId("my-db-secret")
+    .factory(factory)
+    .refreshIntervalSeconds(60L)
+    .build();
 
 final var sessionFactory = new Configuration()
     .setProperty("hibernate.connection.provider_class", "org.hibernate.connection.DatasourceConnectionProvider")
@@ -245,16 +226,16 @@ try (var conn = rotatingDs.getConnection()) {
 
 ```java
 // Primary database
-var primaryDs = new RotatingDataSource(
-    "primary-db-secret",
-    secret -> createHikariDataSource(secret, false),
-    60L
-);
+var primaryDs = RotatingDataSource.builder()
+    .secretId("primary-db-secret")
+    .factory(secret -> createHikariDataSource(secret, false))
+    .refreshIntervalSeconds(60L)
+    .build();
 
 // Read replica (read-only)
-var replicaDs = new RotatingDataSource(
-    "replica-db-secret",
-    secret -> {
+var replicaDs = RotatingDataSource.builder()
+    .secretId("replica-db-secret")
+    .factory(secret -> {
         var config = new HikariConfig();
         config.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
         config.setUsername(secret.username());
@@ -262,9 +243,9 @@ var replicaDs = new RotatingDataSource(
         config.setReadOnly(true);
         config.setMaximumPoolSize(20);
         return new HikariDataSource(config);
-    },
-    60L
-);
+    })
+    .refreshIntervalSeconds(60L)
+    .build();
 ```
 
 ## How It Works
@@ -318,14 +299,14 @@ var combined = Retry.AuthErrorDetector.defaultDetector().or(customDetector);
 The library includes comprehensive tests using Testcontainers for PostgreSQL and MySQL:
 
 ```bash
-# Run all tests
-mvn -pl sm-core test
+# Run all tests in core module
+mvn -q -pl rotating-datasource-core test
 
 # Run specific test
-mvn -pl sm-core test -Dtest=RotatingDataSourceTest
+mvn -q -pl rotating-datasource-core test -Dtest=RotatingDataSourceTest
 
 # Run integration tests only
-mvn -pl sm-core test -Dtest=*IntegrationTest
+mvn -q -pl rotating-datasource-core test -Dtest=*IntegrationTest
 ```
 
 ## Thread Safety
@@ -356,6 +337,130 @@ try {
 3. **Configure connection pool properly** (max pool size, timeouts, health checks)
 4. **Monitor authentication failures** to detect rotation issues early
 5. **Test rotation** in staging with actual secret rotation
+
+## RDS + Secrets Manager Integration (PostgreSQL and MySQL)
+
+This library is designed to work out‑of‑the‑box with AWS RDS when database credentials are rotated via AWS Secrets
+Manager.
+
+- Secrets Manager stores a JSON document with fields similar to the following.
+- RotatingDataSource reads that secret using SecretsManagerProvider/SecretHelper and builds your preferred connection
+  pool via a DataSourceFactory.
+- When Secrets Manager rotates the password, RotatingDataSource detects it and swaps in a new pool without downtime.
+
+### Secret JSON formats
+
+PostgreSQL example:
+
+```json
+{
+  "username": "app_user",
+  "password": "s3cr3t",
+  "engine": "postgres",
+  "host": "example.cluster-abcdefghijkl.us-east-1.rds.amazonaws.com",
+  "port": 5432,
+  "dbname": "appdb"
+}
+```
+
+MySQL example:
+
+```json
+{
+  "username": "app_user",
+  "password": "s3cr3t",
+  "engine": "mysql",
+  "host": "example.cluster-abcdefghijkl.us-east-1.rds.amazonaws.com",
+  "port": 3306,
+  "dbname": "appdb"
+}
+```
+
+### Minimal configuration (HikariCP)
+
+PostgreSQL
+
+```java
+var ds = RotatingDataSource.builder()
+        .secretId("rds/postgres/app")
+        .factory(secret -> {
+            var cfg = new HikariConfig();
+            cfg.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
+            cfg.setUsername(secret.username());
+            cfg.setPassword(secret.password());
+            cfg.setMaximumPoolSize(10);
+            return new HikariDataSource(cfg);
+        })
+        // Postgres typically does NOT support dual valid passwords
+        .overlapDuration(Duration.ZERO)      // disable overlap fallback
+        .gracePeriod(Duration.ofSeconds(60)) // let in-flight sessions drain
+        .refreshIntervalSeconds(60)          // optional proactive refresh
+        .build();
+```
+
+MySQL/Aurora MySQL (with dual-password overlap in rotation procedure)
+
+```java
+var ds = RotatingDataSource.builder()
+        .secretId("rds/mysql/app")
+        .factory(secret -> {
+            var cfg = new HikariConfig();
+            cfg.setJdbcUrl("jdbc:mysql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
+            cfg.setUsername(secret.username());
+            cfg.setPassword(secret.password());
+            cfg.setMaximumPoolSize(10);
+            return new HikariDataSource(cfg);
+        })
+        .overlapDuration(Duration.ofHours(24)) // fallback to old pool on auth failures during overlap
+        .gracePeriod(Duration.ofSeconds(60))   // used only when overlap is zero
+        .refreshIntervalSeconds(60)            // optional proactive refresh
+        .build();
+```
+
+Notes:
+
+- If your MySQL rotation does NOT retain the old password concurrently, set overlapDuration(Duration.ZERO) like
+  PostgreSQL.
+- For Aurora/MySQL with retain-current-password or custom rotation Lambdas that keep both passwords valid, a non-zero
+  overlapDuration provides seamless fallback for new connections while the new credentials propagate.
+
+### How rotation is detected and handled
+
+- Proactive: if refreshIntervalSeconds > 0, a background task periodically compares the latest secret versionId; if it
+  changed, reset() swaps to a new pool built from the updated secret.
+- Reactive: if getConnection() encounters an authentication failure, Retry.authRetry triggers reset() and retries once.
+- Overlap window (if configured): during overlapDuration, RotatingDataSource keeps the old pool as a secondary. If the
+  new primary fails auth, getConnection() falls back to the secondary, avoiding error spikes.
+- Grace period (when overlap is zero): the old pool stays open for gracePeriod so already-checked-out connections finish
+  cleanly while new connections use the new pool.
+
+### Builder properties explained
+
+- secretId: Secrets Manager secret name/ARN that stores your DB credentials.
+- factory: function that builds your connection pool (HikariCP, Tomcat JDBC, DBCP2, etc.) using the current secret.
+- refreshIntervalSeconds: proactive check interval (0 disables). Helps shorten the window between rotation and client
+  refresh.
+- retryPolicy: transient retry policy (fixed/exponential). Applied around connection acquisition, with jitter to avoid
+  thundering herd.
+- authErrorDetector: pluggable detector for vendor-specific authentication errors (defaults cover common cases for
+  Postgres/MySQL; extend for Oracle, etc.).
+- overlapDuration: enable dual-password overlap fallback for engines/procedures that keep old and new passwords valid
+  concurrently (typical for some MySQL/Aurora flows). Default: 15 minutes.
+- gracePeriod: drain window used when overlapDuration is zero. Recommended for PostgreSQL. Default: 60 seconds.
+
+### Environment and local testing
+
+- Configure AWS region/endpoint/credentials via system properties or environment variables; see
+  rotating-datasource-core/SecretsManagerProvider for details.
+- Integration tests in rotating-datasource-orm-examples use Localstack to emulate Secrets Manager and Testcontainers for
+  PostgreSQL.
+
+### JDBC vs ORMs
+
+- JDBC: Inject/use the RotatingDataSource like any DataSource. No extra retry code is required; connection acquisition
+  retries automatically. For simple queries you can use JdbcTemplate or plain JDBC normally.
+- ORMs (Hibernate/JPA/Spring Data/jOOQ): Wire RotatingDataSource as the DataSource. ORMs inherit retry on connection
+  acquisition. Use Retry.authRetry only for rare long-running units of work that straddle a password rotation.
 
 ## Related
 

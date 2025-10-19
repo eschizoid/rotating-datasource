@@ -81,7 +81,7 @@ public class SpringDataMainIntegrationTest {
                 )
                 """);
     for (int i = 0; i < 100; i++) {
-      userRepo.save(new TestUser("user" + i, "user" + i + "@example.com"));
+      userRepo.save(new TestUser("user%d".formatted(i), "user%d@example.com".formatted(i)));
     }
   }
 
@@ -128,7 +128,7 @@ public class SpringDataMainIntegrationTest {
         "-U",
         postgres.getUsername(),
         "-c",
-        "ALTER USER " + postgres.getUsername() + " WITH PASSWORD '" + newPassword + "';");
+        "ALTER USER %s WITH PASSWORD '%s';".formatted(postgres.getUsername(), newPassword));
 
     smClient.updateSecret(r -> r.secretId(SECRET_ID).secretString(pgSecretJson(newPassword)));
     SecretsManagerProvider.resetCache();
@@ -193,7 +193,7 @@ public class SpringDataMainIntegrationTest {
                   jdbc.queryForObject("SELECT now()", Instant.class);
                   userRepo2.save(
                       new TestUser(
-                          "w%d_%d".formatted(w, System.nanoTime()), "w" + w + "@example.com"));
+                          "w%d_%d".formatted(w, System.nanoTime()), "w%d@example.com".formatted(w)));
                 } catch (final Throwable t) {
                   workerErrors.add(t);
                 }
@@ -250,7 +250,7 @@ public class SpringDataMainIntegrationTest {
           }
           try {
             final var rotation = rotationCount.incrementAndGet();
-            final var newPassword = "rotated_pass_" + rotation;
+            final var newPassword = "rotated_pass_%d".formatted(rotation);
 
             LOGGER.log(
                 INFO,
@@ -263,7 +263,7 @@ public class SpringDataMainIntegrationTest {
                 "-U",
                 postgres.getUsername(),
                 "-c",
-                "ALTER USER " + postgres.getUsername() + " WITH PASSWORD '" + newPassword + "';");
+                "ALTER USER %s WITH PASSWORD '%s';".formatted(postgres.getUsername(), newPassword));
 
             smClient.updateSecret(
                 r -> r.secretId(SECRET_ID).secretString(pgSecretJson(newPassword)));
@@ -310,7 +310,7 @@ public class SpringDataMainIntegrationTest {
                           .findById(id)
                           .ifPresent(
                               u -> {
-                                u.setEmail("updated" + workerId + "@example.com");
+                                u.setEmail("updated%d@example.com".formatted(workerId));
                                 userRepo.save(u);
                               });
                       successfulOps.incrementAndGet();
@@ -319,7 +319,7 @@ public class SpringDataMainIntegrationTest {
                       userRepo.save(
                           new TestUser(
                               "temp_%d_%d".formatted(workerId, System.nanoTime()),
-                              "temp" + workerId + "@example.com"));
+                              "temp%d@example.com".formatted(workerId)));
                       userRepo.deleteOneByUsernamePrefix("temp_");
                       successfulOps.incrementAndGet();
                     }
@@ -387,11 +387,12 @@ public class SpringDataMainIntegrationTest {
     assertTrue(rotationCount.get() >= 1, "Should perform at least one password rotation");
     assertTrue(
         successfulOps.get() > 50,
-        "Should complete many operations successfully. Completed: " + successfulOps.get());
+        "Should complete many operations successfully. Completed: %d"
+            .formatted(successfulOps.get()));
     assertTrue(
         errors.isEmpty(),
-        "No errors should occur during rotations with internal retry handling. Found: "
-            + errors.stream().map(Throwable::getMessage).collect(joining(", ")));
+        "No errors should occur during rotations with internal retry handling. Found: %s"
+            .formatted(errors.stream().map(Throwable::getMessage).collect(joining(", "))));
   }
 
   private String pgSecretJson() {
