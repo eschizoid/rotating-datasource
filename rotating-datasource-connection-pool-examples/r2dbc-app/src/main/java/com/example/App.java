@@ -58,8 +58,7 @@ public class App {
   }
 
   /**
-   * Queries the database for the current time using the reusable rotating connection factory. This
-   * method blocks for simplicity to mirror the JDBC example.
+   * Queries the database for the current time using the reusable rotating connection factory.
    *
    * @return the time string returned by the database
    */

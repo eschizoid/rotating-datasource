@@ -134,9 +134,7 @@ public class AppAutoRefreshIntegrationTest {
     while (System.currentTimeMillis() < deadline) {
       try {
         final var val = app.getString();
-        if (val != null && !val.isBlank()) {
-          return val;
-        }
+        if (val != null && !val.isBlank()) return val;
       } catch (final Exception exception) { // allow any transient exceptions
         if (System.currentTimeMillis() >= deadline) {
           throw new SQLException(
