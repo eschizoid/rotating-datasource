@@ -23,7 +23,6 @@
         <mockito.version>5.13.0</mockito.version>
         <mockito.inline.version>5.2.0</mockito.inline.version>
         <mockito.version>5.13.0</mockito.version>
-        <mockito.inline.version>5.2.0</mockito.inline.version>
         <mysql.version>9.3.0</mysql.version>
         <postgresql.version>42.7.7</postgresql.version>
         <r2dbc.version>1.0.0.RELEASE</r2dbc.version>
