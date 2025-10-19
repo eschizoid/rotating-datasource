@@ -10,9 +10,9 @@
  * <ul>
  *   <li>{@link com.example.rotatingdatasource.core.DbSecret} – immutable representation of a
  *       database secret payload.
- *   <li>{@link com.example.rotatingdatasource.core.SecretsManagerProvider} – lazily configured AWS
+ *   <li>{@link com.example.rotatingdatasource.core.secrets.SecretsManagerProvider} – lazily configured AWS
  *       Secrets Manager client (supports endpoint/region/credentials overrides).
- *   <li>{@link com.example.rotatingdatasource.core.SecretHelper} – fetches raw secret JSON and
+ *   <li>{@link com.example.rotatingdatasource.core.secrets.SecretHelper} – fetches raw secret JSON and
  *       deserializes to {@code DbSecret}.
  *   <li>{@link com.example.rotatingdatasource.core.DataSourceFactoryProvider} – functional factory for
  *       building a DataSource from a secret.

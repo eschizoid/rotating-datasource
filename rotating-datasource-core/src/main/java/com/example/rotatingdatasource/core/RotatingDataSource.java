@@ -5,6 +5,8 @@ import static com.example.rotatingdatasource.core.Retry.Policy.exponential;
 import static java.lang.System.Logger.Level.*;
 
 import com.example.rotatingdatasource.core.Retry.Policy;
+import com.example.rotatingdatasource.core.secrets.SecretHelper;
+
 import java.io.PrintWriter;
 import java.lang.System.Logger;
 import java.sql.Connection;

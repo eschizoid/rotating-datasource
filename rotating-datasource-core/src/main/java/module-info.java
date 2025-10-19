@@ -10,7 +10,7 @@
  *   <li>JDBC client with automatic credential rotation
  * </ul>
  */
-module com.example.smrotator.core {
+module com.example.rotatingdatasource.core {
   requires java.sql;
   requires java.logging;
   requires r2dbc.spi;
@@ -21,4 +21,6 @@ module com.example.smrotator.core {
   requires com.fasterxml.jackson.databind;
 
   exports com.example.rotatingdatasource.core;
+  exports com.example.rotatingdatasource.core.secrets;
+  exports com.example.rotatingdatasource.core.reactive;
 }

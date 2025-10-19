@@ -3,7 +3,7 @@ package com.example;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.ConnectionFactoryProvider;
+import com.example.rotatingdatasource.core.reactive.ConnectionFactoryProvider;
 import com.example.rotatingdatasource.core.DbSecret;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.DriverManager;

@@ -2,6 +2,8 @@ package com.example.rotatingdatasource.core;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.example.rotatingdatasource.core.secrets.SecretHelper;
+import com.example.rotatingdatasource.core.secrets.SecretsManagerProvider;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
