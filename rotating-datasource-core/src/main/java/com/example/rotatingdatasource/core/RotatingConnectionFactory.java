@@ -14,8 +14,8 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.retry.Retry;
 
 /**
- * R2DBC ConnectionFactory wrapper that automatically survives credential rotations with
- * built-in retry and optional proactive refresh, mirroring RotatingDataSource features.
+ * R2DBC ConnectionFactory wrapper that automatically survives credential rotations with built-in
+ * retry and optional proactive refresh, mirroring RotatingDataSource features.
  *
  * <h2>Basic Usage</h2>
  *
@@ -60,7 +60,7 @@ import reactor.util.retry.Retry;
  *     .secretId("my-db-secret")
  *     .factory(secret -> createR2dbcPool(secret))
  *     .refreshIntervalSeconds(60L)
- *     .authErrorDetector(R2dbcAuthErrorDetector.defaultDetector())
+ *     .authErrorDetector(R2dbcRetryHelper.AuthErrorDetector.defaultDetector())
  *     .overlapDuration(Duration.ofMinutes(15))
  *     .gracePeriod(Duration.ofSeconds(60))
  *     .build();
@@ -73,7 +73,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
 
   private final String secretId;
   private final ConnectionFactoryProvider factory;
-  private final R2dbcAuthErrorDetector authErrorDetector;
+  private final R2dbcRetry.AuthErrorDetector authErrorDetector;
   private final Duration overlapDuration;
   private final Duration gracePeriod;
 
@@ -142,7 +142,8 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
     private String secretId;
     private ConnectionFactoryProvider factory;
     private long refreshIntervalSeconds = 0L;
-    private R2dbcAuthErrorDetector authErrorDetector = R2dbcAuthErrorDetector.defaultDetector();
+    private R2dbcRetry.AuthErrorDetector authErrorDetector =
+        R2dbcRetry.AuthErrorDetector.defaultDetector();
     private Duration overlapDuration = Duration.ofMinutes(15);
     private Duration gracePeriod = Duration.ofSeconds(60);
 
@@ -171,8 +172,8 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
     /**
      * Sets the proactive refresh interval in seconds.
      *
-     * <p>When set to a value greater than 0, the factory will periodically check for secret
-     * version changes and automatically refresh credentials.
+     * <p>When set to a value greater than 0, the factory will periodically check for secret version
+     * changes and automatically refresh credentials.
      *
      * <p>Default: 0 (disabled)
      *
@@ -187,12 +188,12 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
     /**
      * Sets the authentication error detector.
      *
-     * <p>Default: {@link R2dbcAuthErrorDetector#defaultDetector()}
+     * <p>Default: {@link R2dbcRetry.AuthErrorDetector#defaultDetector()}
      *
      * @param authErrorDetector custom auth error detection logic
      * @return this builder
      */
-    public Builder authErrorDetector(R2dbcAuthErrorDetector authErrorDetector) {
+    public Builder authErrorDetector(R2dbcRetry.AuthErrorDetector authErrorDetector) {
       this.authErrorDetector = authErrorDetector;
       return this;
     }
@@ -251,8 +252,8 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
    * Creates a new R2DBC Connection.
    *
    * <p>Before acquiring the connection, this method checks for a newer secret version and refreshes
-   * credentials if needed. It will retry once on authentication errors by resetting credentials, and
-   * will also retry on transient connection errors using an exponential backoff policy.
+   * credentials if needed. It will retry once on authentication errors by resetting credentials,
+   * and will also retry on transient connection errors using an exponential backoff policy.
    *
    * @return a Mono emitting the acquired Connection
    */
@@ -389,7 +390,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
     return Retry.backoff(20, Duration.ofSeconds(5))
         .maxBackoff(Duration.ofMinutes(1))
         .jitter(0.25)
-        .filter(R2dbcRetryHelper::isTransientConnectionError)
+        .filter(R2dbcRetry::isTransientConnectionError)
         .doBeforeRetry(
             signal ->
                 logger.log(
