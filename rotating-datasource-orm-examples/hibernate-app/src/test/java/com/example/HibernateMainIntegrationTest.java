@@ -8,7 +8,7 @@ import static java.util.stream.Collectors.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.SecretsManagerProvider;
+import com.example.rotatingdatasource.core.secrets.SecretsManagerProvider;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;

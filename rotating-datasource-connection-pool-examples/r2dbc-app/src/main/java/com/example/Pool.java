@@ -1,6 +1,6 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.ConnectionFactoryProvider;
+import com.example.rotatingdatasource.core.reactive.ConnectionFactoryProvider;
 import io.r2dbc.pool.ConnectionPool;
 import io.r2dbc.pool.ConnectionPoolConfiguration;
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;
@@ -9,6 +9,7 @@ import java.time.Duration;
 
 public class Pool {
 
+  /** Public factory for r2dbc ConnectionPool instances built from a DbSecret. */
   public static final ConnectionFactoryProvider r2dbcPoolFactory =
       secret -> {
         final var config =

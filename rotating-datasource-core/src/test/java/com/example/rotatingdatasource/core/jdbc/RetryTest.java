@@ -1,6 +1,6 @@
-package com.example.rotatingdatasource.core;
+package com.example.rotatingdatasource.core.jdbc;
 
-import static com.example.rotatingdatasource.core.Retry.*;
+import static com.example.rotatingdatasource.core.jdbc.Retry.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 

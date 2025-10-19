@@ -59,8 +59,8 @@ mvn -q -pl rotating-datasource-core test
 ### Basic Usage with HikariCP
 
 ```java
-import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
-import com.example.rotatingdatasource.core.RotatingDataSource;
+import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
+import com.example.rotatingdatasource.core.jdbc.RotatingDataSource;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 

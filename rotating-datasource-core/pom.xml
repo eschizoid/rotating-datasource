@@ -12,9 +12,6 @@
     <artifactId>rotating-datasource-core</artifactId>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <assertj.version>3.24.2</assertj.version>
         <aws.sdk.version>2.33.9</aws.sdk.version>
         <hikari.version>5.1.0</hikari.version>
@@ -36,33 +33,39 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
             <version>${jackson.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
+            <scope>provided</scope>
         </dependency>
         <!-- AWS SDK v2 dependencies -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>secretsmanager</artifactId>
             <version>${aws.sdk.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sdk-core</artifactId>
             <version>${aws.sdk.version}</version>
+            <scope>provided</scope>
         </dependency>
         <!-- rd2bc dependencies -->
         <dependency>
             <groupId>io.r2dbc</groupId>
             <artifactId>r2dbc-spi</artifactId>
             <version>${r2dbc.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-core</artifactId>
             <version>${reactor.version}</version>
+            <scope>provided</scope>
         </dependency>
 
         <!-- JUnit for testing -->

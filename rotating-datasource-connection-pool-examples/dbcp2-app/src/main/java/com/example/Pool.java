@@ -1,6 +1,6 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
+import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
 import org.apache.commons.dbcp2.BasicDataSource;
 
 public class Pool {

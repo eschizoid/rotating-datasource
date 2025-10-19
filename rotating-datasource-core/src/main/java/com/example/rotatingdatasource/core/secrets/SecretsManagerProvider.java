@@ -1,4 +1,4 @@
-package com.example.rotatingdatasource.core;
+package com.example.rotatingdatasource.core.secrets;
 
 import java.net.URI;
 import java.time.Clock;
@@ -67,7 +67,8 @@ public class SecretsManagerProvider {
   }
 
   /** For tests only: override TTL and clock. */
-  static synchronized void configureCacheForTests(final long newTtlMillis, final Clock newClock) {
+  public static synchronized void configureCacheForTests(
+      final long newTtlMillis, final Clock newClock) {
     ttlMillis = Math.max(0L, newTtlMillis);
     clock = Optional.ofNullable(newClock).orElse(Clock.systemUTC());
     CACHE.clear();

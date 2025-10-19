@@ -1,8 +1,9 @@
-package com.example.rotatingdatasource.core;
+package com.example.rotatingdatasource.core.jdbc;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.example.rotatingdatasource.core.secrets.SecretsManagerProvider;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.net.URI;
@@ -111,7 +112,7 @@ public class DbClientIT {
               }
             },
             Retry.Policy.fixed(2, 1_000));
-    assertEquals(1, before);
+    Assertions.assertEquals(1, before);
 
     // Simulate password rotation by updating secret
     final var newPassword = "rotated_password";
@@ -140,7 +141,7 @@ public class DbClientIT {
               }
             },
             Retry.Policy.fixed(2, 1_000));
-    assertEquals(2, after);
+    Assertions.assertEquals(2, after);
   }
 
   @Test

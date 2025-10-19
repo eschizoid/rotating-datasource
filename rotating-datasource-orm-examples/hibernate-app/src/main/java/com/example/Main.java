@@ -1,8 +1,8 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.DataSourceFactoryProvider;
-import com.example.rotatingdatasource.core.Retry.Policy;
-import com.example.rotatingdatasource.core.RotatingDataSource;
+import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
+import com.example.rotatingdatasource.core.jdbc.Retry.Policy;
+import com.example.rotatingdatasource.core.jdbc.RotatingDataSource;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.time.Duration;

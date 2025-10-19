@@ -22,8 +22,10 @@
 
     <properties>
         <apache.dbcp2.version>2.13.0</apache.dbcp2.version>
+        <aws.sdk.version>2.33.9</aws.sdk.version>
         <c3p0.version>0.11.2</c3p0.version>
         <hikari.version>5.1.0</hikari.version>
+        <jackson.version>2.20.0</jackson.version>
         <junit.jupiter.version>5.13.4</junit.jupiter.version>
         <r2dbc.postgresql>1.1.0.RELEASE</r2dbc.postgresql>
         <r2dbc.version>1.0.2.RELEASE</r2dbc.version>
@@ -38,6 +40,26 @@
                 <groupId>com.example</groupId>
                 <artifactId>rotating-datasource-core</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>secretsmanager</artifactId>
+                <version>${aws.sdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>sdk-core</artifactId>
+                <version>${aws.sdk.version}</version>
             </dependency>
 
             <!-- Connection pool dependencies -->

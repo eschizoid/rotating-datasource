@@ -20,7 +20,9 @@
     </modules>
 
     <properties>
+        <aws.sdk.version>2.33.9</aws.sdk.version>
         <hikari.version>5.1.0</hikari.version>
+        <jackson.version>2.20.0</jackson.version>
         <junit.jupiter.version>5.13.4</junit.jupiter.version>
         <postgresql.version>42.7.7</postgresql.version>
         <testcontainers.version>1.21.3</testcontainers.version>
@@ -72,6 +74,26 @@
                 <artifactId>postgresql</artifactId>
                 <version>${testcontainers.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>secretsmanager</artifactId>
+                <version>${aws.sdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>sdk-core</artifactId>
+                <version>${aws.sdk.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
