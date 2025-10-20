@@ -1,9 +1,9 @@
-package com.example.rotatingdatasource.core.reactive;
+package com.example.rotating.datasource.core.reactive;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.secrets.SecretsManagerProvider;
+import com.example.rotating.datasource.core.secrets.SecretsManagerProvider;
 import io.r2dbc.pool.ConnectionPool;
 import io.r2dbc.pool.ConnectionPoolConfiguration;
 import io.r2dbc.postgresql.PostgresqlConnectionConfiguration;

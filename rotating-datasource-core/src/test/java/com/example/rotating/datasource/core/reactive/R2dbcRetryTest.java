@@ -1,4 +1,4 @@
-package com.example.rotatingdatasource.core.reactive;
+package com.example.rotating.datasource.core.reactive;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -150,7 +150,8 @@ class R2dbcRetryTest {
                 })
             .retryWhen(
                 R2dbcRetry.toReactorRetry(
-                    com.example.rotatingdatasource.core.jdbc.Retry.Policy.fixed(totalAttempts, 1)));
+                    com.example.rotating.datasource.core.jdbc.Retry.Policy.fixed(
+                        totalAttempts, 1)));
 
     final var out = source.block();
     assertEquals("ok", out);

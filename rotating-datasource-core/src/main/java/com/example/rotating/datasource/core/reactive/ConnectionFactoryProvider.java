@@ -1,6 +1,6 @@
-package com.example.rotatingdatasource.core.reactive;
+package com.example.rotating.datasource.core.reactive;
 
-import com.example.rotatingdatasource.core.secrets.DbSecret;
+import com.example.rotating.datasource.core.secrets.DbSecret;
 import io.r2dbc.spi.ConnectionFactory;
 
 /**

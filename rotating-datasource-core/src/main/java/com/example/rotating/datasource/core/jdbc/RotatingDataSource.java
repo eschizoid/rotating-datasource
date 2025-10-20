@@ -1,11 +1,14 @@
-package com.example.rotatingdatasource.core.jdbc;
+package com.example.rotating.datasource.core.jdbc;
 
-import static com.example.rotatingdatasource.core.jdbc.Retry.*;
-import static com.example.rotatingdatasource.core.jdbc.Retry.Policy.exponential;
+import static com.example.rotating.datasource.core.jdbc.Retry.Policy.exponential;
+import static com.example.rotating.datasource.core.jdbc.Retry.authRetry;
+import static com.example.rotating.datasource.core.jdbc.Retry.transientRetry;
 import static java.lang.System.Logger.Level.*;
 
-import com.example.rotatingdatasource.core.jdbc.Retry.Policy;
-import com.example.rotatingdatasource.core.secrets.SecretHelper;
+import com.example.rotating.datasource.core.jdbc.Retry.AuthErrorDetector;
+import com.example.rotating.datasource.core.jdbc.Retry.Policy;
+import com.example.rotating.datasource.core.jdbc.Retry.Policy.*;
+import com.example.rotating.datasource.core.secrets.SecretHelper;
 import java.io.PrintWriter;
 import java.lang.System.Logger;
 import java.sql.Connection;

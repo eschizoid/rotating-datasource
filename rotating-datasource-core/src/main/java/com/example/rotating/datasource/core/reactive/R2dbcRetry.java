@@ -1,6 +1,6 @@
-package com.example.rotatingdatasource.core.reactive;
+package com.example.rotating.datasource.core.reactive;
 
-import com.example.rotatingdatasource.core.jdbc.Retry;
+import com.example.rotating.datasource.core.jdbc.Retry;
 import io.r2dbc.spi.R2dbcException;
 import io.r2dbc.spi.R2dbcTransientResourceException;
 import java.time.Duration;

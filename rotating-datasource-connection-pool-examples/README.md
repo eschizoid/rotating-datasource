@@ -8,6 +8,7 @@ Submodules:
 - `c3p0-app` — uses C3P0
 - `dbcp2-app` — uses Apache Commons DBCP2
 - `hikaricp-app` — uses HikariCP
+- `rdbcp-app` — uses R2DBC Pool (for reactive applications)
 - `tomcat-jdbc-app` — uses Apache Tomcat JDBC pool
 
 ## Requirements

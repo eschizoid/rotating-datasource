@@ -1,4 +1,4 @@
-package com.example.rotatingdatasource.core.secrets;
+package com.example.rotating.datasource.core.secrets;
 
 import java.net.URI;
 import java.time.Clock;

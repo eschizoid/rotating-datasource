@@ -2,8 +2,8 @@ package com.example;
 
 import static java.lang.System.Logger.Level.DEBUG;
 
-import com.example.rotatingdatasource.core.reactive.ConnectionFactoryProvider;
-import com.example.rotatingdatasource.core.reactive.RotatingConnectionFactory;
+import com.example.rotating.datasource.core.reactive.ConnectionFactoryProvider;
+import com.example.rotating.datasource.core.reactive.RotatingConnectionFactory;
 import io.r2dbc.spi.ConnectionFactory;
 import reactor.core.publisher.Mono;
 
