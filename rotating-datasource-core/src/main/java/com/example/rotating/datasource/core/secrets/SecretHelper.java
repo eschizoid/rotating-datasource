@@ -1,4 +1,4 @@
-package com.example.rotatingdatasource.core.secrets;
+package com.example.rotating.datasource.core.secrets;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.function.Supplier;

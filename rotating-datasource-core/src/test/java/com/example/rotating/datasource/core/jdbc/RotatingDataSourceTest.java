@@ -1,12 +1,12 @@
-package com.example.rotatingdatasource.core.jdbc;
+package com.example.rotating.datasource.core.jdbc;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
-import com.example.rotatingdatasource.core.secrets.DbSecret;
-import com.example.rotatingdatasource.core.secrets.SecretHelper;
+import com.example.rotating.datasource.core.secrets.DbSecret;
+import com.example.rotating.datasource.core.secrets.SecretHelper;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;

@@ -1,4 +1,4 @@
-package com.example.rotatingdatasource.core.secrets;
+package com.example.rotating.datasource.core.secrets;
 
 /**
  * Representation of a database secret stored in AWS Secrets Manager.

@@ -1,4 +1,4 @@
-package com.example.rotatingdatasource.core.jdbc;
+package com.example.rotating.datasource.core.jdbc;
 
 import java.sql.Connection;
 import java.sql.SQLException;

@@ -1,6 +1,6 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.secrets.SecretsManagerProvider;
+import com.example.rotating.datasource.core.secrets.SecretsManagerProvider;
 import java.net.URI;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;

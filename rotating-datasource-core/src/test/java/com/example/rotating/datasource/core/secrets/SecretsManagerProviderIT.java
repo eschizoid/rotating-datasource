@@ -1,4 +1,4 @@
-package com.example.rotatingdatasource.core.secrets;
+package com.example.rotating.datasource.core.secrets;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;

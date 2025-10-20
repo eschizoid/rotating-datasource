@@ -1,6 +1,6 @@
 package com.example;
 
-import com.example.rotatingdatasource.core.jdbc.DataSourceFactoryProvider;
+import com.example.rotating.datasource.core.jdbc.DataSourceFactoryProvider;
 import org.apache.tomcat.jdbc.pool.DataSource;
 import org.apache.tomcat.jdbc.pool.PoolProperties;
 

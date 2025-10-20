@@ -1,9 +1,9 @@
-package com.example.rotatingdatasource.core.jdbc;
+package com.example.rotating.datasource.core.jdbc;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.example.rotatingdatasource.core.secrets.SecretsManagerProvider;
+import com.example.rotating.datasource.core.secrets.SecretsManagerProvider;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.net.URI;
