@@ -11,14 +11,15 @@
  * </ul>
  */
 module com.example.rotatingdatasource.core {
+  requires com.fasterxml.jackson.databind;
   requires java.sql;
   requires java.logging;
+  requires org.reactivestreams;
   requires r2dbc.spi;
   requires reactor.core;
   requires software.amazon.awssdk.auth;
   requires software.amazon.awssdk.regions;
   requires software.amazon.awssdk.services.secretsmanager;
-  requires com.fasterxml.jackson.databind;
 
   exports com.example.rotatingdatasource.core.secrets;
   exports com.example.rotatingdatasource.core.reactive;

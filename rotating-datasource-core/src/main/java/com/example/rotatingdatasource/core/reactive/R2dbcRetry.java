@@ -2,8 +2,12 @@ package com.example.rotatingdatasource.core.reactive;
 
 import com.example.rotatingdatasource.core.jdbc.Retry;
 import io.r2dbc.spi.R2dbcException;
+import io.r2dbc.spi.R2dbcTransientResourceException;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.function.Predicate;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Reactive retry utilities and detectors for R2DBC, mirroring the capabilities and style of {@link
@@ -65,14 +69,22 @@ public final class R2dbcRetry {
    * </ul>
    */
   public static boolean isAuthError(final Throwable error) {
-    if (!(error instanceof R2dbcException r2dbcEx)) return false;
+    final var r2dbcEx = findR2dbcException(error);
+    if (r2dbcEx != null) {
+      final var sqlState = r2dbcEx.getSqlState();
+      if ("28000".equals(sqlState) || "28P01".equals(sqlState)) return true;
 
-    final var sqlState = r2dbcEx.getSqlState();
-    if ("28000".equals(sqlState) || "28P01".equals(sqlState)) return true;
+      final var msg = r2dbcEx.getMessage();
+      if (msg != null) {
+        final var lower = msg.toLowerCase(Locale.ROOT);
+        for (var keyword : AUTH_KEYWORDS) if (lower.contains(keyword)) return true;
+      }
+    }
 
-    final var msg = r2dbcEx.getMessage();
-    if (msg != null) {
-      final var lower = msg.toLowerCase(Locale.ROOT);
+    // Fallback to top-level message keywords (e.g., pool wrappers)
+    final var topMsg = error != null ? error.getMessage() : null;
+    if (topMsg != null) {
+      final var lower = topMsg.toLowerCase(Locale.ROOT);
       for (var keyword : AUTH_KEYWORDS) if (lower.contains(keyword)) return true;
     }
 
@@ -88,14 +100,26 @@ public final class R2dbcRetry {
    * </ul>
    */
   public static boolean isTransientConnectionError(final Throwable error) {
-    if (!(error instanceof R2dbcException r2dbcEx)) return false;
+    // Unwrap to first R2dbcException if present
+    final var r2dbcEx = findR2dbcException(error);
+    if (r2dbcEx != null) {
+      // Known transient type
+      if (r2dbcEx instanceof R2dbcTransientResourceException) return true;
 
-    final var sqlState = r2dbcEx.getSqlState();
-    if (sqlState != null && sqlState.startsWith("08")) return true;
+      final var sqlState = r2dbcEx.getSqlState();
+      if (sqlState != null && sqlState.startsWith("08")) return true;
 
-    final var msg = r2dbcEx.getMessage();
-    if (msg != null) {
-      final var lower = msg.toLowerCase(Locale.ROOT);
+      final var msg = r2dbcEx.getMessage();
+      if (msg != null) {
+        final var lower = msg.toLowerCase(Locale.ROOT);
+        for (var keyword : TRANSIENT_KEYWORDS) if (lower.contains(keyword)) return true;
+      }
+    }
+
+    // Fallback to top-level message heuristics (e.g., pool exhaustion wrappers)
+    final var topMsg = error != null ? error.getMessage() : null;
+    if (topMsg != null) {
+      final var lower = topMsg.toLowerCase(Locale.ROOT);
       for (var keyword : TRANSIENT_KEYWORDS) if (lower.contains(keyword)) return true;
     }
 
@@ -145,5 +169,77 @@ public final class R2dbcRetry {
     default AuthErrorDetector or(final AuthErrorDetector other) {
       return e -> this.isAuthError(e) || other.isAuthError(e);
     }
+  }
+
+  /**
+   * Returns a predicate that matches transient connection/pool errors suitable for Reactor Retry
+   * filtering.
+   */
+  public static Predicate<Throwable> transientErrorPredicate() {
+    return R2dbcRetry::isTransientConnectionError;
+  }
+
+  /**
+   * Creates a fixed-delay Reactor retry spec analogous to {@link Retry.Policy#fixed(int, long)}.
+   * The number of resubscriptions equals (attempts - 1).
+   */
+  public static reactor.util.retry.Retry fixed(final int attempts, final Duration delay) {
+    final int retries = Math.max(0, attempts - 1);
+    return reactor.util.retry.Retry.fixedDelay(retries, delay);
+  }
+
+  /**
+   * Creates an exponential backoff Reactor retry spec with optional max backoff and jitter
+   * analogous to {@link Retry.Policy#exponential(int, long)} and custom policies.
+   */
+  public static reactor.util.retry.Retry exponential(
+      final int attempts, final Duration initial, final Duration max) {
+    final int retries = Math.max(0, attempts - 1);
+    return reactor.util.retry.Retry.backoff(retries, initial).maxBackoff(max).jitter(0.25d);
+  }
+
+  /** Adapts a JDBC {@link Retry.Policy} to a Reactor retry spec. */
+  public static reactor.util.retry.Retry toReactorRetry(final Retry.Policy p) {
+    final int retries = Math.max(0, p.maxAttempts() - 1);
+    reactor.util.retry.Retry spec;
+    if (p.backoffMultiplier() > 1.0) {
+      spec =
+          reactor.util.retry.Retry.backoff(retries, Duration.ofMillis(p.initialDelayMillis()))
+              .maxBackoff(Duration.ofMillis(p.maxDelayMillis()));
+    } else {
+      spec =
+          reactor.util.retry.Retry.fixedDelay(retries, Duration.ofMillis(p.initialDelayMillis()));
+    }
+    // Note: the current Reactor Retry API in this project does not expose jitter configuration.
+    return spec;
+  }
+
+  /**
+   * Convenience wrapper: retry a Mono once on authentication error by invoking the provided reset
+   * action, then resubscribing.
+   */
+  public static <T> Mono<T> authRetry(
+      final Mono<T> source, final Mono<Void> reset, final AuthErrorDetector detector) {
+    return source.onErrorResume(t -> detector.isAuthError(t) ? reset.then(source) : Mono.error(t));
+  }
+
+  /**
+   * Convenience wrapper: retry a Flux once on authentication error by invoking the provided reset
+   * action, then resubscribing.
+   */
+  public static <T> Flux<T> authRetry(
+      final Flux<T> source, final Mono<Void> reset, final AuthErrorDetector detector) {
+    return source.onErrorResume(
+        t -> detector.isAuthError(t) ? reset.thenMany(source) : Mono.error(t));
+  }
+
+  /** Finds the first R2dbcException in a throwable cause chain. */
+  private static R2dbcException findR2dbcException(final Throwable t) {
+    Throwable cur = t;
+    while (cur != null) {
+      if (cur instanceof R2dbcException ex) return ex;
+      cur = cur.getCause();
+    }
+    return null;
   }
 }

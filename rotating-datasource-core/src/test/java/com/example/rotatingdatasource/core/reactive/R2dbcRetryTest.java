@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import io.r2dbc.spi.R2dbcNonTransientResourceException;
 import io.r2dbc.spi.R2dbcTransientResourceException;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 class R2dbcRetryTest {
 
@@ -52,5 +55,116 @@ class R2dbcRetryTest {
     assertTrue(custom.isAuthError(new RuntimeException("custom-auth marker")));
     assertTrue(combined.isAuthError(new RuntimeException("custom-auth marker")));
     assertFalse(defaultDetector.isAuthError(new RuntimeException("other")));
+  }
+
+  @Test
+  @DisplayName("authRetry(Mono) retries once on auth error and invokes reset exactly once")
+  void authRetryMonoRetriesOnceOnAuthError() {
+    final var attempts = new AtomicInteger(0);
+    final var resets = new AtomicInteger(0);
+
+    final Mono<String> source =
+        Mono.defer(
+            () -> {
+              if (attempts.getAndIncrement() == 0) {
+                return Mono.error(
+                    new R2dbcNonTransientResourceException(
+                        "Password authentication failed", "28P01", 0));
+              }
+              return Mono.just("ok");
+            });
+
+    final var result =
+        R2dbcRetry.authRetry(
+                source,
+                Mono.fromRunnable(resets::incrementAndGet),
+                R2dbcRetry.AuthErrorDetector.defaultDetector())
+            .block();
+
+    assertEquals("ok", result);
+    assertEquals(2, attempts.get(), "should subscribe twice (one retry)");
+    assertEquals(1, resets.get(), "reset should be called once");
+  }
+
+  @Test
+  @DisplayName("authRetry(Mono) does not reset on non-auth error and propagates")
+  void authRetryMonoDoesNotResetOnNonAuth() {
+    final var resets = new AtomicInteger(0);
+
+    final Mono<String> source =
+        Mono.defer(
+            () -> Mono.error(new R2dbcNonTransientResourceException("syntax error", "42601", 0)));
+
+    final var mono =
+        R2dbcRetry.authRetry(
+            source,
+            Mono.fromRunnable(resets::incrementAndGet),
+            R2dbcRetry.AuthErrorDetector.defaultDetector());
+
+    try {
+      mono.block();
+      fail("Expected exception");
+    } catch (Throwable t) {
+      // expected
+    }
+    assertEquals(0, resets.get(), "reset should not be called for non-auth errors");
+  }
+
+  @Test
+  @DisplayName("fixed(attempts, delay) results in expected resubscriptions")
+  void fixedRetryProducesExpectedResubscriptions() {
+    final var attempts = new AtomicInteger(0);
+    final int failTimes = 2; // First 2 attempts fail, then succeed on 3rd
+
+    final Mono<String> source =
+        Mono.defer(
+                () -> {
+                  final int a = attempts.incrementAndGet();
+                  if (a <= failTimes) {
+                    return Mono.error(
+                        new R2dbcTransientResourceException("conn reset", "08006", 0));
+                  }
+                  return Mono.just("done");
+                })
+            .retryWhen(R2dbcRetry.fixed(failTimes + 1, Duration.ofMillis(1)));
+
+    final var out = source.block();
+    assertEquals("done", out);
+    assertEquals(failTimes + 1, attempts.get(), "should attempt initial + retries");
+  }
+
+  @Test
+  @DisplayName("toReactorRetry(Policy.fixed) adapts to expected number of retries")
+  void toReactorRetryAdaptsFixedPolicy() {
+    final var attempts = new AtomicInteger(0);
+    final int totalAttempts = 3; // initial + 2 retries
+
+    final Mono<String> source =
+        Mono.defer(
+                () -> {
+                  final int a = attempts.incrementAndGet();
+                  if (a < totalAttempts) {
+                    return Mono.error(new R2dbcTransientResourceException("temporary", "08006", 0));
+                  }
+                  return Mono.just("ok");
+                })
+            .retryWhen(
+                R2dbcRetry.toReactorRetry(
+                    com.example.rotatingdatasource.core.jdbc.Retry.Policy.fixed(totalAttempts, 1)));
+
+    final var out = source.block();
+    assertEquals("ok", out);
+    assertEquals(totalAttempts, attempts.get());
+  }
+
+  @Test
+  @DisplayName("transientErrorPredicate matches transient exceptions")
+  void transientPredicateMatches() {
+    assertTrue(
+        R2dbcRetry.transientErrorPredicate()
+            .test(new R2dbcTransientResourceException("conn refused", "08001", 0)));
+    assertFalse(
+        R2dbcRetry.transientErrorPredicate()
+            .test(new R2dbcNonTransientResourceException("unique violation", "23505", 0)));
   }
 }
