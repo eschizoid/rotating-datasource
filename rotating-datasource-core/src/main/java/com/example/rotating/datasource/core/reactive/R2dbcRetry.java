@@ -202,14 +202,14 @@ public final class R2dbcRetry {
   public static reactor.util.retry.Retry toReactorRetry(final Retry.Policy p) {
     final int retries = Math.max(0, p.maxAttempts() - 1);
     reactor.util.retry.Retry spec;
-    if (p.backoffMultiplier() > 1.0) {
+    if (p.backoffMultiplier() > 1.0)
       spec =
           reactor.util.retry.Retry.backoff(retries, Duration.ofMillis(p.initialDelayMillis()))
               .maxBackoff(Duration.ofMillis(p.maxDelayMillis()));
-    } else {
+    else
       spec =
           reactor.util.retry.Retry.fixedDelay(retries, Duration.ofMillis(p.initialDelayMillis()));
-    }
+
     // Note: the current Reactor Retry API in this project does not expose jitter configuration.
     return spec;
   }
