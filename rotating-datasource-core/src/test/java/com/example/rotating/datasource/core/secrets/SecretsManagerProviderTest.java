@@ -22,6 +22,18 @@ class SecretsManagerProviderTest {
 
   private MockedStatic<SecretsManagerProvider> clientStaticMock;
 
+  private static void clearAwsProps() {
+    System.clearProperty("aws.region");
+    System.clearProperty("aws.sm.endpoint");
+    System.clearProperty("aws.accessKeyId");
+    System.clearProperty("aws.secretAccessKey");
+    System.clearProperty("aws.sm.cache.ttl.millis");
+  }
+
+  private static GetSecretValueResponse response(final String value, final String version) {
+    return GetSecretValueResponse.builder().secretString(value).versionId(version).build();
+  }
+
   @BeforeEach
   void setup() {
     // Clean slate for each test
@@ -38,14 +50,6 @@ class SecretsManagerProviderTest {
     }
     SecretsManagerProvider.resetClient();
     clearAwsProps();
-  }
-
-  private static void clearAwsProps() {
-    System.clearProperty("aws.region");
-    System.clearProperty("aws.sm.endpoint");
-    System.clearProperty("aws.accessKeyId");
-    System.clearProperty("aws.secretAccessKey");
-    System.clearProperty("aws.sm.cache.ttl.millis");
   }
 
   @Test
@@ -194,9 +198,5 @@ class SecretsManagerProviderTest {
 
     assertEquals("afterReset", SecretsManagerProvider.getSecret(SECRET_ID));
     verify(mockClient2, times(1)).getSecretValue(any(GetSecretValueRequest.class));
-  }
-
-  private static GetSecretValueResponse response(final String value, final String version) {
-    return GetSecretValueResponse.builder().secretString(value).versionId(version).build();
   }
 }

@@ -119,140 +119,6 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
   }
 
   /**
-   * Builder for creating RotatingConnectionFactory instances with fluent configuration.
-   *
-   * <h3>Example: Minimal Configuration</h3>
-   *
-   * <pre>{@code
-   * var rotatingCf = RotatingConnectionFactory.builder()
-   *     .secretId("my-db-secret")
-   *     .factory(secret -> createR2dbcPool(secret))
-   *     .build();
-   * }</pre>
-   *
-   * <h3>Example: Production Configuration</h3>
-   *
-   * <pre>{@code
-   * var rotatingCf = RotatingConnectionFactory.builder()
-   *     .secretId("prod-db-secret")
-   *     .factory(secret -> createR2dbcPool(secret))
-   *     .refreshIntervalSeconds(60L)
-   *     .overlapDuration(Duration.ofHours(24))
-   *     .gracePeriod(Duration.ofMinutes(2))
-   *     .build();
-   * }</pre>
-   */
-  public static class Builder {
-    private String secretId;
-    private ConnectionFactoryProvider factory;
-    private long refreshIntervalSeconds = 0L;
-    private R2dbcRetry.AuthErrorDetector authErrorDetector =
-        R2dbcRetry.AuthErrorDetector.defaultDetector();
-    private Duration overlapDuration = Duration.ofMinutes(15);
-    private Duration gracePeriod = Duration.ofSeconds(60);
-
-    /**
-     * Sets the AWS Secrets Manager secret ID (required).
-     *
-     * @param secretId the secret identifier
-     * @return this builder
-     */
-    public Builder secretId(final String secretId) {
-      this.secretId = secretId;
-      return this;
-    }
-
-    /**
-     * Sets the ConnectionFactory factory function (required).
-     *
-     * @param factory function that creates a ConnectionFactory from a DbSecret
-     * @return this builder
-     */
-    public Builder factory(final ConnectionFactoryProvider factory) {
-      this.factory = factory;
-      return this;
-    }
-
-    /**
-     * Sets the proactive refresh interval in seconds.
-     *
-     * <p>When set to a value greater than 0, the factory will periodically check for secret version
-     * changes and automatically refresh credentials.
-     *
-     * <p>Default: 0 (disabled)
-     *
-     * @param refreshIntervalSeconds interval in seconds (0 to disable)
-     * @return this builder
-     */
-    public Builder refreshIntervalSeconds(final long refreshIntervalSeconds) {
-      this.refreshIntervalSeconds = refreshIntervalSeconds;
-      return this;
-    }
-
-    /**
-     * Sets the authentication error detector.
-     *
-     * <p>Default: {@link R2dbcRetry.AuthErrorDetector#defaultDetector()}
-     *
-     * @param authErrorDetector custom auth error detection logic
-     * @return this builder
-     */
-    public Builder authErrorDetector(final R2dbcRetry.AuthErrorDetector authErrorDetector) {
-      this.authErrorDetector = authErrorDetector;
-      return this;
-    }
-
-    /**
-     * Sets the dual-password overlap duration.
-     *
-     * <p>During this period after a refresh, both old and new credentials remain valid. This
-     * supports zero-downtime rotation for databases like AWS RDS that support dual passwords.
-     *
-     * <p>Default: 15 minutes
-     *
-     * @param overlapDuration how long to keep old credentials valid
-     * @return this builder
-     */
-    public Builder overlapDuration(final Duration overlapDuration) {
-      this.overlapDuration = overlapDuration;
-      return this;
-    }
-
-    /**
-     * Sets the grace period before disposing the old ConnectionFactory when not using overlap.
-     *
-     * <p>After a credential refresh (when overlap is zero), the old factory will be kept alive for
-     * this duration to allow in-flight operations to complete.
-     *
-     * <p>Default: 60 seconds
-     *
-     * @param gracePeriod how long to wait before disposing old factories
-     * @return this builder
-     */
-    public Builder gracePeriod(final Duration gracePeriod) {
-      this.gracePeriod = gracePeriod;
-      return this;
-    }
-
-    /**
-     * Builds the RotatingConnectionFactory instance.
-     *
-     * <p>Immediately fetches the secret and creates the initial ConnectionFactory. If the secret
-     * doesn't exist or the factory fails, this method throws.
-     *
-     * @return configured RotatingConnectionFactory
-     * @throws IllegalStateException if required fields are not set
-     * @throws RuntimeException if initial ConnectionFactory creation fails
-     */
-    public RotatingConnectionFactory build() {
-      if (secretId == null || secretId.isBlank())
-        throw new IllegalStateException("secretId is required");
-      if (factory == null) throw new IllegalStateException("factory is required");
-      return new RotatingConnectionFactory(this);
-    }
-  }
-
-  /**
    * Creates a new R2DBC Connection.
    *
    * <p>Before acquiring the connection, this method checks for a newer secret version and refreshes
@@ -461,5 +327,139 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
    */
   public Optional<Instant> getOverlapExpiresAt() {
     return java.util.Optional.ofNullable(secondaryExpiresAt.get());
+  }
+
+  /**
+   * Builder for creating RotatingConnectionFactory instances with fluent configuration.
+   *
+   * <h3>Example: Minimal Configuration</h3>
+   *
+   * <pre>{@code
+   * var rotatingCf = RotatingConnectionFactory.builder()
+   *     .secretId("my-db-secret")
+   *     .factory(secret -> createR2dbcPool(secret))
+   *     .build();
+   * }</pre>
+   *
+   * <h3>Example: Production Configuration</h3>
+   *
+   * <pre>{@code
+   * var rotatingCf = RotatingConnectionFactory.builder()
+   *     .secretId("prod-db-secret")
+   *     .factory(secret -> createR2dbcPool(secret))
+   *     .refreshIntervalSeconds(60L)
+   *     .overlapDuration(Duration.ofHours(24))
+   *     .gracePeriod(Duration.ofMinutes(2))
+   *     .build();
+   * }</pre>
+   */
+  public static class Builder {
+    private String secretId;
+    private ConnectionFactoryProvider factory;
+    private long refreshIntervalSeconds = 0L;
+    private R2dbcRetry.AuthErrorDetector authErrorDetector =
+        R2dbcRetry.AuthErrorDetector.defaultDetector();
+    private Duration overlapDuration = Duration.ofMinutes(15);
+    private Duration gracePeriod = Duration.ofSeconds(60);
+
+    /**
+     * Sets the AWS Secrets Manager secret ID (required).
+     *
+     * @param secretId the secret identifier
+     * @return this builder
+     */
+    public Builder secretId(final String secretId) {
+      this.secretId = secretId;
+      return this;
+    }
+
+    /**
+     * Sets the ConnectionFactory factory function (required).
+     *
+     * @param factory function that creates a ConnectionFactory from a DbSecret
+     * @return this builder
+     */
+    public Builder factory(final ConnectionFactoryProvider factory) {
+      this.factory = factory;
+      return this;
+    }
+
+    /**
+     * Sets the proactive refresh interval in seconds.
+     *
+     * <p>When set to a value greater than 0, the factory will periodically check for secret version
+     * changes and automatically refresh credentials.
+     *
+     * <p>Default: 0 (disabled)
+     *
+     * @param refreshIntervalSeconds interval in seconds (0 to disable)
+     * @return this builder
+     */
+    public Builder refreshIntervalSeconds(final long refreshIntervalSeconds) {
+      this.refreshIntervalSeconds = refreshIntervalSeconds;
+      return this;
+    }
+
+    /**
+     * Sets the authentication error detector.
+     *
+     * <p>Default: {@link R2dbcRetry.AuthErrorDetector#defaultDetector()}
+     *
+     * @param authErrorDetector custom auth error detection logic
+     * @return this builder
+     */
+    public Builder authErrorDetector(final R2dbcRetry.AuthErrorDetector authErrorDetector) {
+      this.authErrorDetector = authErrorDetector;
+      return this;
+    }
+
+    /**
+     * Sets the dual-password overlap duration.
+     *
+     * <p>During this period after a refresh, both old and new credentials remain valid. This
+     * supports zero-downtime rotation for databases like AWS RDS that support dual passwords.
+     *
+     * <p>Default: 15 minutes
+     *
+     * @param overlapDuration how long to keep old credentials valid
+     * @return this builder
+     */
+    public Builder overlapDuration(final Duration overlapDuration) {
+      this.overlapDuration = overlapDuration;
+      return this;
+    }
+
+    /**
+     * Sets the grace period before disposing the old ConnectionFactory when not using overlap.
+     *
+     * <p>After a credential refresh (when overlap is zero), the old factory will be kept alive for
+     * this duration to allow in-flight operations to complete.
+     *
+     * <p>Default: 60 seconds
+     *
+     * @param gracePeriod how long to wait before disposing old factories
+     * @return this builder
+     */
+    public Builder gracePeriod(final Duration gracePeriod) {
+      this.gracePeriod = gracePeriod;
+      return this;
+    }
+
+    /**
+     * Builds the RotatingConnectionFactory instance.
+     *
+     * <p>Immediately fetches the secret and creates the initial ConnectionFactory. If the secret
+     * doesn't exist or the factory fails, this method throws.
+     *
+     * @return configured RotatingConnectionFactory
+     * @throws IllegalStateException if required fields are not set
+     * @throws RuntimeException if initial ConnectionFactory creation fails
+     */
+    public RotatingConnectionFactory build() {
+      if (secretId == null || secretId.isBlank())
+        throw new IllegalStateException("secretId is required");
+      if (factory == null) throw new IllegalStateException("factory is required");
+      return new RotatingConnectionFactory(this);
+    }
   }
 }

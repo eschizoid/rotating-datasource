@@ -29,8 +29,8 @@ import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRespon
  */
 public class SecretsManagerProvider {
 
-  private static volatile SecretsManagerClient client;
   private static final ConcurrentHashMap<String, CacheEntry> CACHE = new ConcurrentHashMap<>();
+  private static volatile SecretsManagerClient client;
   private static volatile long ttlMillis = initTtlMillis();
   private static volatile Clock clock = Clock.systemUTC();
 

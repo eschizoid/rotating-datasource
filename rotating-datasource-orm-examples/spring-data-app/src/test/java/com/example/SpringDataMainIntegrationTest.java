@@ -33,11 +33,10 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class SpringDataMainIntegrationTest {
-  private JdbcTemplate jdbc;
   private static final String SECRET_ID = "it/orm/spring-data/secret";
   private static final System.Logger LOGGER =
       System.getLogger(SpringDataMainIntegrationTest.class.getName());
-
+  private JdbcTemplate jdbc;
   private PostgreSQLContainer<?> postgres;
   private GenericContainer<?> localstack;
   private SecretsManagerClient smClient;

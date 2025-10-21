@@ -27,11 +27,10 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class RotatingDataSourceIT {
 
+  private static final String SECRET_ID = "it/pg/secret";
   private PostgreSQLContainer<?> postgres;
   private GenericContainer<?> localstack;
   private SecretsManagerClient smClient;
-
-  private static final String SECRET_ID = "it/pg/secret";
 
   @BeforeAll
   void startContainersAndSeedSecret() {
@@ -76,6 +75,59 @@ public class RotatingDataSourceIT {
       }
     if (localstack != null) localstack.stop();
     if (postgres != null) postgres.stop();
+  }
+
+  private DataSourceFactoryProvider hikariFactory() {
+    return secret -> {
+      final var cfg = new HikariConfig();
+      final var url =
+          "jdbc:postgresql://%s:%d/%s".formatted(secret.host(), secret.port(), secret.dbname());
+      cfg.setJdbcUrl(url);
+      cfg.setUsername(secret.username());
+      cfg.setPassword(secret.password());
+      cfg.setMaximumPoolSize(5);
+      cfg.setPoolName("rotating-ds-it");
+      cfg.setConnectionTimeout(Duration.ofSeconds(5).toMillis());
+      cfg.setInitializationFailTimeout(-1);
+      return new HikariDataSource(cfg);
+    };
+  }
+
+  private String pgSecretJson(final PostgreSQLContainer<?> c, final String password) {
+    return """
+        {"username":"%s","password":"%s","engine":"postgres","host":"%s","port":%d,"dbname":"%s"}
+        """
+        .formatted(
+            c.getUsername(), password, c.getHost(), c.getFirstMappedPort(), c.getDatabaseName());
+  }
+
+  private boolean dockerAvailable() {
+    try {
+      DockerClientFactory.instance().client();
+      return true;
+    } catch (final Throwable t) {
+      return false;
+    }
+  }
+
+  private void configureSecretsManagerForLocalstack() {
+    System.setProperty(
+        "aws.sm.endpoint",
+        "http://%s:%d".formatted(localstack.getHost(), localstack.getMappedPort(4566)));
+    System.setProperty("aws.region", "us-east-1");
+    System.setProperty("aws.accessKeyId", "test");
+    System.setProperty("aws.secretAccessKey", "test");
+  }
+
+  private SecretsManagerClient buildLocalstackClient() {
+    final var endpoint =
+        "http://%s:%d".formatted(localstack.getHost(), localstack.getMappedPort(4566));
+    return SecretsManagerClient.builder()
+        .endpointOverride(URI.create(endpoint))
+        .region(Region.US_EAST_1)
+        .credentialsProvider(
+            StaticCredentialsProvider.create(AwsBasicCredentials.create("test", "test")))
+        .build();
   }
 
   @Nested
@@ -550,58 +602,5 @@ public class RotatingDataSourceIT {
 
       rotating.shutdown();
     }
-  }
-
-  private DataSourceFactoryProvider hikariFactory() {
-    return secret -> {
-      final var cfg = new HikariConfig();
-      final var url =
-          "jdbc:postgresql://%s:%d/%s".formatted(secret.host(), secret.port(), secret.dbname());
-      cfg.setJdbcUrl(url);
-      cfg.setUsername(secret.username());
-      cfg.setPassword(secret.password());
-      cfg.setMaximumPoolSize(5);
-      cfg.setPoolName("rotating-ds-it");
-      cfg.setConnectionTimeout(Duration.ofSeconds(5).toMillis());
-      cfg.setInitializationFailTimeout(-1);
-      return new HikariDataSource(cfg);
-    };
-  }
-
-  private String pgSecretJson(final PostgreSQLContainer<?> c, final String password) {
-    return """
-        {"username":"%s","password":"%s","engine":"postgres","host":"%s","port":%d,"dbname":"%s"}
-        """
-        .formatted(
-            c.getUsername(), password, c.getHost(), c.getFirstMappedPort(), c.getDatabaseName());
-  }
-
-  private boolean dockerAvailable() {
-    try {
-      DockerClientFactory.instance().client();
-      return true;
-    } catch (final Throwable t) {
-      return false;
-    }
-  }
-
-  private void configureSecretsManagerForLocalstack() {
-    System.setProperty(
-        "aws.sm.endpoint",
-        "http://%s:%d".formatted(localstack.getHost(), localstack.getMappedPort(4566)));
-    System.setProperty("aws.region", "us-east-1");
-    System.setProperty("aws.accessKeyId", "test");
-    System.setProperty("aws.secretAccessKey", "test");
-  }
-
-  private SecretsManagerClient buildLocalstackClient() {
-    final var endpoint =
-        "http://%s:%d".formatted(localstack.getHost(), localstack.getMappedPort(4566));
-    return SecretsManagerClient.builder()
-        .endpointOverride(URI.create(endpoint))
-        .region(Region.US_EAST_1)
-        .credentialsProvider(
-            StaticCredentialsProvider.create(AwsBasicCredentials.create("test", "test")))
-        .build();
   }
 }

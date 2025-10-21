@@ -60,9 +60,6 @@ import java.util.function.Supplier;
 public final class Retry {
 
   private static final System.Logger LOGGER = System.getLogger(Retry.class.getName());
-
-  private Retry() {}
-
   private static final String[] AUTH_KEYWORDS =
       new String[] {
         "access denied",
@@ -71,7 +68,6 @@ public final class Retry {
         "invalid password",
         "permission denied"
       };
-
   private static final String[] TRANSIENT_CONN_KEYWORDS =
       new String[] {
         "connection refused",
@@ -84,435 +80,7 @@ public final class Retry {
         "timeout"
       };
 
-  /**
-   * A supplier that can throw a {@link SQLException}.
-   *
-   * <p>Used as the functional interface for operations that need retry logic.
-   *
-   * <p>Example:
-   *
-   * <pre>{@code
-   * SqlExceptionSupplier<List<User>, SQLException> supplier =
-   *     () -> jdbcTemplate.query("SELECT * FROM users", rowMapper);
-   *
-   * final var users = Retry.onException(
-   *     supplier,
-   *     SQLException::isTransient,
-   *     () -> {},
-   *     3, 100L
-   * );
-   * }</pre>
-   *
-   * @param <T> result type
-   * @param <E> exception type extending SQLException
-   */
-  @FunctionalInterface
-  public interface SqlExceptionSupplier<T, E extends SQLException> {
-
-    /**
-     * Supplies a value or throws a {@link SQLException}.
-     *
-     * @return supplied value
-     * @throws E on failure
-     */
-    T get() throws SQLException;
-  }
-
-  /**
-   * Retry policy defining attempt limits and backoff strategy.
-   *
-   * <h3>Jitter Mechanics</h3>
-   *
-   * <p>When enabled, jitter adds randomness to prevent thundering herd:
-   *
-   * <ul>
-   *   <li>Random multiplier between 0.75 and 1.25 (±25% variance)
-   *   <li>Example: 1000ms delay becomes 750ms-1250ms
-   *   <li>Spreads retry timing across multiple clients
-   * </ul>
-   *
-   * <h3>Examples</h3>
-   *
-   * <pre>{@code
-   * // Fixed: exactly 500ms between attempts
-   * var fixed = Policy.fixed(3, 500L);
-   *
-   * // Exponential: 100ms, ~200ms, ~400ms with jitter
-   * var exponential = Policy.exponential(5, 100L);
-   *
-   * // Custom: capped at 10s with 3x multiplier
-   * var custom = new Policy(10, 100L, 10_000L, 3.0, true);
-   * }</pre>
-   *
-   * @param maxAttempts total attempts (first + retries), must be ≥ 1
-   * @param initialDelayMillis starting delay, must be ≥ 0
-   * @param maxDelayMillis cap for exponential growth, must be ≥ initialDelayMillis
-   * @param backoffMultiplier growth factor (1.0 = fixed), must be ≥ 1.0
-   * @param jitter whether to add ±25% randomness to delays
-   */
-  public record Policy(
-      int maxAttempts,
-      long initialDelayMillis,
-      long maxDelayMillis,
-      double backoffMultiplier,
-      boolean jitter) {
-
-    public Policy {
-      if (maxAttempts < 1) throw new IllegalArgumentException("maxAttempts must be >= 1");
-      if (initialDelayMillis < 0)
-        throw new IllegalArgumentException("initialDelayMillis must be >= 0");
-      if (maxDelayMillis < initialDelayMillis)
-        throw new IllegalArgumentException("maxDelayMillis must be >= initialDelayMillis");
-      if (backoffMultiplier < 1.0)
-        throw new IllegalArgumentException("backoffMultiplier must be >= 1.0");
-    }
-
-    /**
-     * Creates a fixed delay retry policy.
-     *
-     * <p>All retry attempts use the same delay between them.
-     *
-     * <p>Example:
-     *
-     * <pre>{@code
-     * // Retry up to 5 times with 500ms between each attempt
-     * var policy = Policy.fixed(5, 500L);
-     *
-     * var client = new DbClient(rotatingDs);
-     * String result = client.executeWithRetry(conn ->
-     *     conn.createStatement().executeQuery("SELECT 1")
-     * );
-     * }</pre>
-     *
-     * @param attempts number of attempts (including first)
-     * @param delayMillis delay between attempts in milliseconds
-     * @return fixed delay retry policy
-     */
-    public static Policy fixed(final int attempts, final long delayMillis) {
-      return new Policy(attempts, delayMillis, delayMillis, 1.0, false);
-    }
-
-    /**
-     * Creates an exponential backoff retry policy with jitter.
-     *
-     * <p>Delays grow exponentially (2x) up to a maximum of 60 seconds, with 25% random jitter added
-     * to prevent thundering herd problems.
-     *
-     * <p>Example:
-     *
-     * <pre>{@code
-     * // Retry up to 7 times, starting at 250ms
-     * final var policy = Policy.exponential(7, 250L);
-     *
-     * // Configure RotatingDataSource with exponential backoff
-     * var rotatingDs = new RotatingDataSource(
-     *     "my-db-secret",
-     *     secret -> createDataSource(secret),
-     *     0L,      // no proactive refresh
-     *     policy   // exponential backoff on auth errors
-     * );
-     * }</pre>
-     *
-     * @param attempts number of attempts (including first)
-     * @param initialDelay initial delay in milliseconds
-     * @return exponential backoff retry policy with jitter
-     */
-    public static Policy exponential(final int attempts, final long initialDelay) {
-      return new Policy(attempts, initialDelay, 60_000L, 2.0, true);
-    }
-
-    /**
-     * Calculates the delay for a given attempt number based on the policy configuration.
-     *
-     * <p>For exponential backoff, the delay is calculated as: {@code initialDelay *
-     * (backoffMultiplier ^ (attempt - 2))}, capped at {@code maxDelayMillis}.
-     *
-     * <p>If jitter is enabled, up to 25% random variation is added.
-     *
-     * <p>Example:
-     *
-     * <pre>{@code
-     * var policy = Policy.exponential(5, 100L);
-     * System.out.println(policy.calculateDelay(1)); // 0 (immediate)
-     * System.out.println(policy.calculateDelay(2)); // ~100ms + jitter
-     * System.out.println(policy.calculateDelay(3)); // ~200ms + jitter
-     * System.out.println(policy.calculateDelay(4)); // ~400ms + jitter
-     * }</pre>
-     *
-     * @param attempt current attempt number (1-based)
-     * @return delay in milliseconds before the next attempt
-     */
-    long calculateDelay(final int attempt) {
-      if (attempt <= 1) return 0L;
-
-      var delay = initialDelayMillis;
-      if (backoffMultiplier > 1.0) {
-        delay = (long) (initialDelayMillis * Math.pow(backoffMultiplier, attempt - 2));
-        delay = Math.min(delay, maxDelayMillis);
-      }
-
-      if (jitter) {
-        // Add up to 25% random jitter
-        final var jitterAmount = (long) (delay * 0.25 * Math.random());
-        delay += jitterAmount;
-      }
-
-      return delay;
-    }
-  }
-
-  /**
-   * Listener for retry events, useful for observability, metrics collection, and debugging.
-   *
-   * <p>Notified before each retry attempt, allowing you to log, record metrics, or take other
-   * actions.
-   *
-   * <h3>Logging Example</h3>
-   *
-   * <pre>{@code
-   * var listener = RetryListener.logging();
-   *
-   * final var result = Retry.onException(
-   *     () -> executeQuery(),
-   *     SQLException::isTransient,
-   *     () -> {},
-   *     3, 100L,
-   *     listener
-   * );
-   * }</pre>
-   *
-   * <h3>Metrics Example</h3>
-   *
-   * <pre>{@code
-   * final var listener = (attempt, exception) -> {
-   *     metrics.increment("db.retries",
-   *         "attempt", String.valueOf(attempt),
-   *         "error_type", exception.getClass().getSimpleName()
-   *     );
-   * };
-   *
-   * Retry.onException(
-   *     () -> executeQuery(),
-   *     e -> e.getSQLState().startsWith("40"),
-   *     () -> {},
-   *     5, 200L,
-   *     listener
-   * );
-   * }</pre>
-   *
-   * <h3>Custom Alerting Example</h3>
-   *
-   * <pre>{@code
-   * final var listener = (attempt, exception) -> {
-   *     if (attempt >= 3) {
-   *         alerting.sendAlert("High retry count: " + attempt);
-   *     }
-   * };
-   * }</pre>
-   */
-  @FunctionalInterface
-  public interface RetryListener {
-    /**
-     * Called before each retry attempt (but not before the first attempt).
-     *
-     * @param attempt attempt number (1-based) that just failed
-     * @param exception the exception that triggered the retry
-     */
-    void onRetry(final int attempt, final Throwable exception);
-
-    /**
-     * Returns a no-op listener that does nothing.
-     *
-     * <p>Useful as a default when you don't need retry observability.
-     *
-     * <p>Example:
-     *
-     * <pre>{@code
-     * var listener = RetryListener.noOp();
-     * }</pre>
-     *
-     * @return no-op listener
-     */
-    static RetryListener noOp() {
-      return (attempt, exception) -> {};
-    }
-
-    /**
-     * Returns a listener that logs retry attempts at WARNING level.
-     *
-     * <p>Logs include the attempt number and exception message.
-     *
-     * <p>Example output:
-     *
-     * <pre>
-     * WARNING: Retry attempt 2 after exception: Connection refused
-     * </pre>
-     *
-     * <p>Example:
-     *
-     * <pre>{@code
-     * final var listener = RetryListener.logging();
-     *
-     * Retry.onException(
-     *     () -> dbOperation(),
-     *     SQLException::isTransient,
-     *     () -> {},
-     *     3, 100L,
-     *     listener
-     * );
-     * }</pre>
-     *
-     * @return logging listener
-     */
-    static RetryListener logging() {
-      return (attempt, exception) ->
-          LOGGER.log(
-              WARNING, "Retry attempt {0} after exception: {1}", attempt, exception.getMessage());
-    }
-  }
-
-  /**
-   * Pluggable authentication error detector for identifying auth failures in SQLExceptions.
-   *
-   * <p>Allows customization of authentication error detection logic to support vendor-specific
-   * error codes and messages.
-   *
-   * <h3>Using Default Detector</h3>
-   *
-   * <pre>{@code
-   * final var detector = AuthErrorDetector.defaultDetector();
-   * if (detector.isAuthError(sqlException)) {
-   *     System.out.println("Authentication error detected");
-   * }
-   * }</pre>
-   *
-   * <h3>Custom Detector for Oracle</h3>
-   *
-   * <pre>{@code
-   * final var oracleDetector = AuthErrorDetector.custom(e ->
-   *     e.getErrorCode() == 1017 ||  // ORA-01017: invalid username/password
-   *     e.getErrorCode() == 28000 ||  // ORA-28000: account is locked
-   *     e.getErrorCode() == 1005      // ORA-01005: null password
-   * );
-   *
-   * final var rotatingDs = new RotatingDataSource(
-   *     secretId,
-   *     factory,
-   *     0L,
-   *     Retry.Policy.fixed(2, 50L),
-   *     oracleDetector
-   * );
-   * }</pre>
-   *
-   * <h3>Combining Detectors</h3>
-   *
-   * <pre>{@code
-   * final var mysqlDetector = AuthErrorDetector.custom(e ->
-   *     e.getErrorCode() == 1045  // Access denied
-   * );
-   *
-   * var combined = AuthErrorDetector.defaultDetector()
-   *     .or(mysqlDetector);
-   *
-   * Retry.authRetry(
-   *     () -> repository.findAll(),
-   *     rotatingDataSource,
-   *     combined
-   * );
-   * }</pre>
-   */
-  @FunctionalInterface
-  public interface AuthErrorDetector {
-    /**
-     * Determines if the exception represents an authentication or authorization error.
-     *
-     * @param e the exception to check
-     * @return true if it's an authentication error
-     */
-    boolean isAuthError(final SQLException e);
-
-    /**
-     * Returns the default detector using built-in heuristics.
-     *
-     * <p>Checks for:
-     *
-     * <ul>
-     *   <li>SQLState codes: 28000 (invalid authorization), 28P01 (invalid password - PostgreSQL)
-     *   <li>Message keywords: "access denied", "authentication failed", "password authentication
-     *       failed", "invalid password", "permission denied"
-     * </ul>
-     *
-     * <p>Example:
-     *
-     * <pre>{@code
-     * final var detector = AuthErrorDetector.defaultDetector();
-     *
-     * try {
-     *     connection.createStatement().execute("SELECT 1");
-     * } catch (SQLException e) {
-     *     if (detector.isAuthError(e)) {
-     *         System.out.println("Auth error: resetting credentials");
-     *         rotatingDs.reset();
-     *     }
-     * }
-     * }</pre>
-     *
-     * @return default detector
-     */
-    static AuthErrorDetector defaultDetector() {
-      return Retry::isAuthError;
-    }
-
-    /**
-     * Creates a custom detector from a predicate.
-     *
-     * <p>Allows implementing vendor-specific auth error detection logic.
-     *
-     * <p>Example for PostgreSQL:
-     *
-     * <pre>{@code
-     * var pgDetector = AuthErrorDetector.custom(e -> {
-     *     final var state = e.getSQLState();
-     *     return "28000".equals(state) ||  // invalid_authorization_specification
-     *            "28P01".equals(state) ||  // invalid_password
-     *            "3D000".equals(state);    // invalid_catalog_name (database doesn't exist)
-     * });
-     * }</pre>
-     *
-     * @param predicate the predicate to use for detection
-     * @return custom detector
-     */
-    static AuthErrorDetector custom(final Predicate<SQLException> predicate) {
-      return predicate::test;
-    }
-
-    /**
-     * Combines this detector with another using OR logic.
-     *
-     * <p>Useful for supporting multiple database vendors or adding custom detection logic on top of
-     * the default.
-     *
-     * <p>Example:
-     *
-     * <pre>{@code
-     * // Support both default heuristics and Oracle-specific error codes
-     * var combined = AuthErrorDetector.defaultDetector()
-     *     .or(AuthErrorDetector.custom(e -> e.getErrorCode() == 1017));
-     *
-     * final var result = Retry.authRetry(
-     *     () -> executeQuery(),
-     *     rotatingDataSource,
-     *     combined
-     * );
-     * }</pre>
-     *
-     * @param other the other detector to combine with
-     * @return combined detector that returns true if either detector matches
-     */
-    default AuthErrorDetector or(final AuthErrorDetector other) {
-      return e -> this.isAuthError(e) || other.isAuthError(e);
-    }
-  }
+  private Retry() {}
 
   /**
    * Executes the supplier with the given retry policy.
@@ -1025,5 +593,435 @@ public final class Retry {
     }
 
     return false;
+  }
+
+  /**
+   * A supplier that can throw a {@link SQLException}.
+   *
+   * <p>Used as the functional interface for operations that need retry logic.
+   *
+   * <p>Example:
+   *
+   * <pre>{@code
+   * SqlExceptionSupplier<List<User>, SQLException> supplier =
+   *     () -> jdbcTemplate.query("SELECT * FROM users", rowMapper);
+   *
+   * final var users = Retry.onException(
+   *     supplier,
+   *     SQLException::isTransient,
+   *     () -> {},
+   *     3, 100L
+   * );
+   * }</pre>
+   *
+   * @param <T> result type
+   * @param <E> exception type extending SQLException
+   */
+  @FunctionalInterface
+  public interface SqlExceptionSupplier<T, E extends SQLException> {
+
+    /**
+     * Supplies a value or throws a {@link SQLException}.
+     *
+     * @return supplied value
+     * @throws E on failure
+     */
+    T get() throws SQLException;
+  }
+
+  /**
+   * Listener for retry events, useful for observability, metrics collection, and debugging.
+   *
+   * <p>Notified before each retry attempt, allowing you to log, record metrics, or take other
+   * actions.
+   *
+   * <h3>Logging Example</h3>
+   *
+   * <pre>{@code
+   * var listener = RetryListener.logging();
+   *
+   * final var result = Retry.onException(
+   *     () -> executeQuery(),
+   *     SQLException::isTransient,
+   *     () -> {},
+   *     3, 100L,
+   *     listener
+   * );
+   * }</pre>
+   *
+   * <h3>Metrics Example</h3>
+   *
+   * <pre>{@code
+   * final var listener = (attempt, exception) -> {
+   *     metrics.increment("db.retries",
+   *         "attempt", String.valueOf(attempt),
+   *         "error_type", exception.getClass().getSimpleName()
+   *     );
+   * };
+   *
+   * Retry.onException(
+   *     () -> executeQuery(),
+   *     e -> e.getSQLState().startsWith("40"),
+   *     () -> {},
+   *     5, 200L,
+   *     listener
+   * );
+   * }</pre>
+   *
+   * <h3>Custom Alerting Example</h3>
+   *
+   * <pre>{@code
+   * final var listener = (attempt, exception) -> {
+   *     if (attempt >= 3) {
+   *         alerting.sendAlert("High retry count: " + attempt);
+   *     }
+   * };
+   * }</pre>
+   */
+  @FunctionalInterface
+  public interface RetryListener {
+    /**
+     * Returns a no-op listener that does nothing.
+     *
+     * <p>Useful as a default when you don't need retry observability.
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * var listener = RetryListener.noOp();
+     * }</pre>
+     *
+     * @return no-op listener
+     */
+    static RetryListener noOp() {
+      return (attempt, exception) -> {};
+    }
+
+    /**
+     * Returns a listener that logs retry attempts at WARNING level.
+     *
+     * <p>Logs include the attempt number and exception message.
+     *
+     * <p>Example output:
+     *
+     * <pre>
+     * WARNING: Retry attempt 2 after exception: Connection refused
+     * </pre>
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * final var listener = RetryListener.logging();
+     *
+     * Retry.onException(
+     *     () -> dbOperation(),
+     *     SQLException::isTransient,
+     *     () -> {},
+     *     3, 100L,
+     *     listener
+     * );
+     * }</pre>
+     *
+     * @return logging listener
+     */
+    static RetryListener logging() {
+      return (attempt, exception) ->
+          LOGGER.log(
+              WARNING, "Retry attempt {0} after exception: {1}", attempt, exception.getMessage());
+    }
+
+    /**
+     * Called before each retry attempt (but not before the first attempt).
+     *
+     * @param attempt attempt number (1-based) that just failed
+     * @param exception the exception that triggered the retry
+     */
+    void onRetry(final int attempt, final Throwable exception);
+  }
+
+  /**
+   * Pluggable authentication error detector for identifying auth failures in SQLExceptions.
+   *
+   * <p>Allows customization of authentication error detection logic to support vendor-specific
+   * error codes and messages.
+   *
+   * <h3>Using Default Detector</h3>
+   *
+   * <pre>{@code
+   * final var detector = AuthErrorDetector.defaultDetector();
+   * if (detector.isAuthError(sqlException)) {
+   *     System.out.println("Authentication error detected");
+   * }
+   * }</pre>
+   *
+   * <h3>Custom Detector for Oracle</h3>
+   *
+   * <pre>{@code
+   * final var oracleDetector = AuthErrorDetector.custom(e ->
+   *     e.getErrorCode() == 1017 ||  // ORA-01017: invalid username/password
+   *     e.getErrorCode() == 28000 ||  // ORA-28000: account is locked
+   *     e.getErrorCode() == 1005      // ORA-01005: null password
+   * );
+   *
+   * final var rotatingDs = new RotatingDataSource(
+   *     secretId,
+   *     factory,
+   *     0L,
+   *     Retry.Policy.fixed(2, 50L),
+   *     oracleDetector
+   * );
+   * }</pre>
+   *
+   * <h3>Combining Detectors</h3>
+   *
+   * <pre>{@code
+   * final var mysqlDetector = AuthErrorDetector.custom(e ->
+   *     e.getErrorCode() == 1045  // Access denied
+   * );
+   *
+   * var combined = AuthErrorDetector.defaultDetector()
+   *     .or(mysqlDetector);
+   *
+   * Retry.authRetry(
+   *     () -> repository.findAll(),
+   *     rotatingDataSource,
+   *     combined
+   * );
+   * }</pre>
+   */
+  @FunctionalInterface
+  public interface AuthErrorDetector {
+    /**
+     * Returns the default detector using built-in heuristics.
+     *
+     * <p>Checks for:
+     *
+     * <ul>
+     *   <li>SQLState codes: 28000 (invalid authorization), 28P01 (invalid password - PostgreSQL)
+     *   <li>Message keywords: "access denied", "authentication failed", "password authentication
+     *       failed", "invalid password", "permission denied"
+     * </ul>
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * final var detector = AuthErrorDetector.defaultDetector();
+     *
+     * try {
+     *     connection.createStatement().execute("SELECT 1");
+     * } catch (SQLException e) {
+     *     if (detector.isAuthError(e)) {
+     *         System.out.println("Auth error: resetting credentials");
+     *         rotatingDs.reset();
+     *     }
+     * }
+     * }</pre>
+     *
+     * @return default detector
+     */
+    static AuthErrorDetector defaultDetector() {
+      return Retry::isAuthError;
+    }
+
+    /**
+     * Creates a custom detector from a predicate.
+     *
+     * <p>Allows implementing vendor-specific auth error detection logic.
+     *
+     * <p>Example for PostgreSQL:
+     *
+     * <pre>{@code
+     * var pgDetector = AuthErrorDetector.custom(e -> {
+     *     final var state = e.getSQLState();
+     *     return "28000".equals(state) ||  // invalid_authorization_specification
+     *            "28P01".equals(state) ||  // invalid_password
+     *            "3D000".equals(state);    // invalid_catalog_name (database doesn't exist)
+     * });
+     * }</pre>
+     *
+     * @param predicate the predicate to use for detection
+     * @return custom detector
+     */
+    static AuthErrorDetector custom(final Predicate<SQLException> predicate) {
+      return predicate::test;
+    }
+
+    /**
+     * Determines if the exception represents an authentication or authorization error.
+     *
+     * @param e the exception to check
+     * @return true if it's an authentication error
+     */
+    boolean isAuthError(final SQLException e);
+
+    /**
+     * Combines this detector with another using OR logic.
+     *
+     * <p>Useful for supporting multiple database vendors or adding custom detection logic on top of
+     * the default.
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * // Support both default heuristics and Oracle-specific error codes
+     * var combined = AuthErrorDetector.defaultDetector()
+     *     .or(AuthErrorDetector.custom(e -> e.getErrorCode() == 1017));
+     *
+     * final var result = Retry.authRetry(
+     *     () -> executeQuery(),
+     *     rotatingDataSource,
+     *     combined
+     * );
+     * }</pre>
+     *
+     * @param other the other detector to combine with
+     * @return combined detector that returns true if either detector matches
+     */
+    default AuthErrorDetector or(final AuthErrorDetector other) {
+      return e -> this.isAuthError(e) || other.isAuthError(e);
+    }
+  }
+
+  /**
+   * Retry policy defining attempt limits and backoff strategy.
+   *
+   * <h3>Jitter Mechanics</h3>
+   *
+   * <p>When enabled, jitter adds randomness to prevent thundering herd:
+   *
+   * <ul>
+   *   <li>Random multiplier between 0.75 and 1.25 (±25% variance)
+   *   <li>Example: 1000ms delay becomes 750ms-1250ms
+   *   <li>Spreads retry timing across multiple clients
+   * </ul>
+   *
+   * <h3>Examples</h3>
+   *
+   * <pre>{@code
+   * // Fixed: exactly 500ms between attempts
+   * var fixed = Policy.fixed(3, 500L);
+   *
+   * // Exponential: 100ms, ~200ms, ~400ms with jitter
+   * var exponential = Policy.exponential(5, 100L);
+   *
+   * // Custom: capped at 10s with 3x multiplier
+   * var custom = new Policy(10, 100L, 10_000L, 3.0, true);
+   * }</pre>
+   *
+   * @param maxAttempts total attempts (first + retries), must be ≥ 1
+   * @param initialDelayMillis starting delay, must be ≥ 0
+   * @param maxDelayMillis cap for exponential growth, must be ≥ initialDelayMillis
+   * @param backoffMultiplier growth factor (1.0 = fixed), must be ≥ 1.0
+   * @param jitter whether to add ±25% randomness to delays
+   */
+  public record Policy(
+      int maxAttempts,
+      long initialDelayMillis,
+      long maxDelayMillis,
+      double backoffMultiplier,
+      boolean jitter) {
+
+    public Policy {
+      if (maxAttempts < 1) throw new IllegalArgumentException("maxAttempts must be >= 1");
+      if (initialDelayMillis < 0)
+        throw new IllegalArgumentException("initialDelayMillis must be >= 0");
+      if (maxDelayMillis < initialDelayMillis)
+        throw new IllegalArgumentException("maxDelayMillis must be >= initialDelayMillis");
+      if (backoffMultiplier < 1.0)
+        throw new IllegalArgumentException("backoffMultiplier must be >= 1.0");
+    }
+
+    /**
+     * Creates a fixed delay retry policy.
+     *
+     * <p>All retry attempts use the same delay between them.
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * // Retry up to 5 times with 500ms between each attempt
+     * var policy = Policy.fixed(5, 500L);
+     *
+     * var client = new DbClient(rotatingDs);
+     * String result = client.executeWithRetry(conn ->
+     *     conn.createStatement().executeQuery("SELECT 1")
+     * );
+     * }</pre>
+     *
+     * @param attempts number of attempts (including first)
+     * @param delayMillis delay between attempts in milliseconds
+     * @return fixed delay retry policy
+     */
+    public static Policy fixed(final int attempts, final long delayMillis) {
+      return new Policy(attempts, delayMillis, delayMillis, 1.0, false);
+    }
+
+    /**
+     * Creates an exponential backoff retry policy with jitter.
+     *
+     * <p>Delays grow exponentially (2x) up to a maximum of 60 seconds, with 25% random jitter added
+     * to prevent thundering herd problems.
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * // Retry up to 7 times, starting at 250ms
+     * final var policy = Policy.exponential(7, 250L);
+     *
+     * // Configure RotatingDataSource with exponential backoff
+     * var rotatingDs = new RotatingDataSource(
+     *     "my-db-secret",
+     *     secret -> createDataSource(secret),
+     *     0L,      // no proactive refresh
+     *     policy   // exponential backoff on auth errors
+     * );
+     * }</pre>
+     *
+     * @param attempts number of attempts (including first)
+     * @param initialDelay initial delay in milliseconds
+     * @return exponential backoff retry policy with jitter
+     */
+    public static Policy exponential(final int attempts, final long initialDelay) {
+      return new Policy(attempts, initialDelay, 60_000L, 2.0, true);
+    }
+
+    /**
+     * Calculates the delay for a given attempt number based on the policy configuration.
+     *
+     * <p>For exponential backoff, the delay is calculated as: {@code initialDelay *
+     * (backoffMultiplier ^ (attempt - 2))}, capped at {@code maxDelayMillis}.
+     *
+     * <p>If jitter is enabled, up to 25% random variation is added.
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * var policy = Policy.exponential(5, 100L);
+     * System.out.println(policy.calculateDelay(1)); // 0 (immediate)
+     * System.out.println(policy.calculateDelay(2)); // ~100ms + jitter
+     * System.out.println(policy.calculateDelay(3)); // ~200ms + jitter
+     * System.out.println(policy.calculateDelay(4)); // ~400ms + jitter
+     * }</pre>
+     *
+     * @param attempt current attempt number (1-based)
+     * @return delay in milliseconds before the next attempt
+     */
+    long calculateDelay(final int attempt) {
+      if (attempt <= 1) return 0L;
+
+      var delay = initialDelayMillis;
+      if (backoffMultiplier > 1.0) {
+        delay = (long) (initialDelayMillis * Math.pow(backoffMultiplier, attempt - 2));
+        delay = Math.min(delay, maxDelayMillis);
+      }
+
+      if (jitter) {
+        // Add up to 25% random jitter
+        final var jitterAmount = (long) (delay * 0.25 * Math.random());
+        delay += jitterAmount;
+      }
+
+      return delay;
+    }
   }
 }

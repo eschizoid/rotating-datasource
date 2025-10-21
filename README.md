@@ -65,11 +65,15 @@ final var emf = Persistence.createEntityManagerFactory("app", Map.of("jakarta.pe
 ## RDS + Secrets Manager Integration
 
 Rotation is performed by AWS Secrets Manager (often via a Lambda). This library:
+
 - Checks the latest secret version and swaps to a new pool when it changes.
 - Retries connection acquisition during/after the swap.
 - Supports two cutover modes:
-  - overlapDuration (default 15 minutes): keep the old pool as a temporary secondary and fall back to it on auth failures during the overlap window. Use for engines/procedures with dual-valid passwords (e.g., some MySQL/Aurora flows).
-  - gracePeriod (default 60 seconds): when overlapDuration is zero, keep the old pool open long enough for in-flight work to finish. Recommended for PostgreSQL where the old password becomes invalid immediately.
+    - overlapDuration (default 15 minutes): keep the old pool as a temporary secondary and fall back to it on auth
+      failures during the overlap window. Use for engines/procedures with dual-valid passwords (e.g., some MySQL/Aurora
+      flows).
+    - gracePeriod (default 60 seconds): when overlapDuration is zero, keep the old pool open long enough for in-flight
+      work to finish. Recommended for PostgreSQL where the old password becomes invalid immediately.
 
 PostgreSQL example (no dual password):
 

@@ -133,8 +133,10 @@ final var rotatingDs = RotatingDataSource.builder()
 
 ## Advanced Usage
 
-- For lower-level JDBC code paths that need per-operation retries, prefer `Retry.onException(...)` with a `Retry.Policy`.
-- ORMs usually do not need extra wrappers; optionally use `Retry.authRetry(...)` for long-running units of work that may straddle a rotation and surface an auth-related SQLException.
+- For lower-level JDBC code paths that need per-operation retries, prefer `Retry.onException(...)` with a
+  `Retry.Policy`.
+- ORMs usually do not need extra wrappers; optionally use `Retry.authRetry(...)` for long-running units of work that may
+  straddle a rotation and surface an auth-related SQLException.
 
 ### Spring Boot Integration
 
@@ -464,5 +466,6 @@ Notes:
 
 ## Related
 
-- See [connection-pool-examples/README.md](../rotating-data-source-connection-pool-examples/README.md) for complete runnable examples with HikariCP
+- See [connection-pool-examples/README.md](../rotating-data-source-connection-pool-examples/README.md) for complete
+  runnable examples with HikariCP
 - See [README.md](../README.md) for overall project documentation

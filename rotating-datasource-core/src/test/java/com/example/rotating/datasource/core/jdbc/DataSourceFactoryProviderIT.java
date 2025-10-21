@@ -21,48 +21,6 @@ import org.testcontainers.utility.DockerImageName;
 @DisabledIfSystemProperty(named = "tests.integration.disable", matches = "true")
 public class DataSourceFactoryProviderIT {
 
-  enum DbPlatform {
-    POSTGRES {
-      @Override
-      JdbcDatabaseContainer<?> newContainer() {
-        return new PostgreSQLContainer<>(DockerImageName.parse("postgres:17"));
-      }
-
-      @Override
-      String jdbcUrl(final DbSecret s) {
-        return "jdbc:postgresql://%s:%d/%s".formatted(s.host(), s.port(), s.dbname());
-      }
-
-      @Override
-      String engine() {
-        return "postgres";
-      }
-    },
-    MYSQL {
-      @Override
-      JdbcDatabaseContainer<?> newContainer() {
-        return new MySQLContainer<>(DockerImageName.parse("mysql:8"));
-      }
-
-      @Override
-      String jdbcUrl(final DbSecret s) {
-        return "jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true"
-            .formatted(s.host(), s.port(), s.dbname());
-      }
-
-      @Override
-      String engine() {
-        return "mysql";
-      }
-    };
-
-    abstract JdbcDatabaseContainer<?> newContainer();
-
-    abstract String jdbcUrl(final DbSecret s);
-
-    abstract String engine();
-  }
-
   static Stream<Arguments> platforms() {
     return Stream.of(Arguments.of(DbPlatform.POSTGRES), Arguments.of(DbPlatform.MYSQL));
   }
@@ -118,5 +76,47 @@ public class DataSourceFactoryProviderIT {
     } catch (final Throwable t) {
       return false;
     }
+  }
+
+  enum DbPlatform {
+    POSTGRES {
+      @Override
+      JdbcDatabaseContainer<?> newContainer() {
+        return new PostgreSQLContainer<>(DockerImageName.parse("postgres:17"));
+      }
+
+      @Override
+      String jdbcUrl(final DbSecret s) {
+        return "jdbc:postgresql://%s:%d/%s".formatted(s.host(), s.port(), s.dbname());
+      }
+
+      @Override
+      String engine() {
+        return "postgres";
+      }
+    },
+    MYSQL {
+      @Override
+      JdbcDatabaseContainer<?> newContainer() {
+        return new MySQLContainer<>(DockerImageName.parse("mysql:8"));
+      }
+
+      @Override
+      String jdbcUrl(final DbSecret s) {
+        return "jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true"
+            .formatted(s.host(), s.port(), s.dbname());
+      }
+
+      @Override
+      String engine() {
+        return "mysql";
+      }
+    };
+
+    abstract JdbcDatabaseContainer<?> newContainer();
+
+    abstract String jdbcUrl(final DbSecret s);
+
+    abstract String engine();
   }
 }

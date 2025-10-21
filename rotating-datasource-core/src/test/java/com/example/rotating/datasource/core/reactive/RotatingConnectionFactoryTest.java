@@ -49,51 +49,6 @@ class RotatingConnectionFactoryTest {
     return secret -> new TestCF("cf-" + secret.password());
   }
 
-  private final class TestCF implements ConnectionFactory {
-    private final String name;
-    private final AtomicInteger failures = new AtomicInteger(0);
-    private volatile Throwable failAlways;
-    private volatile int transientFailTimes;
-
-    TestCF(String name) {
-      this.name = name;
-    }
-
-    TestCF authFailAlways() {
-      this.failAlways = new R2dbcNonTransientResourceException("auth", "28000", 0);
-      return this;
-    }
-
-    TestCF transientFailNTimes(int times) {
-      this.transientFailTimes = times;
-      return this;
-    }
-
-    @Override
-    public Publisher<? extends Connection> create() {
-      // Always-auth-fail branch
-      if (failAlways != null) {
-        return Mono.<Connection>error(failAlways);
-      }
-      // Transient failures first, then succeed
-      if (failures.getAndIncrement() < transientFailTimes) {
-        return Mono.<Connection>error(new R2dbcTransientResourceException("temp", "08006", 0));
-      }
-      return Mono.just(dummyConn);
-    }
-
-    @Override
-    public ConnectionFactoryMetadata getMetadata() {
-      final String n = name;
-      return () -> n;
-    }
-
-    @Override
-    public String toString() {
-      return name;
-    }
-  }
-
   @Test
   @DisplayName("scheduler checkAndRefresh switches primary and updates metadata")
   void schedulerCheckAndRefreshUpdatesPrimary() throws Exception {
@@ -116,11 +71,6 @@ class RotatingConnectionFactoryTest {
 
     // initial metadata
     assertEquals("cf-v1", rcf.getMetadata().getName());
-
-    // Invoke private checkAndRefresh() reflectively to avoid scheduler thread issues
-    final var m = RotatingConnectionFactory.class.getDeclaredMethod("checkAndRefresh");
-    m.setAccessible(true);
-    m.invoke(rcf);
 
     // after refresh, metadata should reflect v2
     assertEquals("cf-v2", rcf.getMetadata().getName());
@@ -289,5 +239,50 @@ class RotatingConnectionFactoryTest {
     assertNotNull(rcf.getMetadata());
 
     rcf.shutdown().blockOptional();
+  }
+
+  private final class TestCF implements ConnectionFactory {
+    private final String name;
+    private final AtomicInteger failures = new AtomicInteger(0);
+    private volatile Throwable failAlways;
+    private volatile int transientFailTimes;
+
+    TestCF(String name) {
+      this.name = name;
+    }
+
+    TestCF authFailAlways() {
+      this.failAlways = new R2dbcNonTransientResourceException("auth", "28000", 0);
+      return this;
+    }
+
+    TestCF transientFailNTimes(int times) {
+      this.transientFailTimes = times;
+      return this;
+    }
+
+    @Override
+    public Publisher<? extends Connection> create() {
+      // Always-auth-fail branch
+      if (failAlways != null) {
+        return Mono.<Connection>error(failAlways);
+      }
+      // Transient failures first, then succeed
+      if (failures.getAndIncrement() < transientFailTimes) {
+        return Mono.<Connection>error(new R2dbcTransientResourceException("temp", "08006", 0));
+      }
+      return Mono.just(dummyConn);
+    }
+
+    @Override
+    public ConnectionFactoryMetadata getMetadata() {
+      final String n = name;
+      return () -> n;
+    }
+
+    @Override
+    public String toString() {
+      return name;
+    }
   }
 }

@@ -38,8 +38,6 @@ import reactor.core.publisher.Mono;
  * }</pre>
  */
 public final class R2dbcRetry {
-  private R2dbcRetry() {}
-
   private static final String[] AUTH_KEYWORDS = {
     "access denied",
     "authentication failed",
@@ -47,7 +45,6 @@ public final class R2dbcRetry {
     "invalid password",
     "permission denied"
   };
-
   private static final String[] TRANSIENT_KEYWORDS = {
     "connection refused",
     "connection reset",
@@ -57,6 +54,8 @@ public final class R2dbcRetry {
     "timeout",
     "pool"
   };
+
+  private R2dbcRetry() {}
 
   /**
    * Determines if a Throwable represents an authentication or authorization error using built-in
@@ -124,51 +123,6 @@ public final class R2dbcRetry {
     }
 
     return false;
-  }
-
-  /**
-   * Pluggable authentication error detector for identifying auth failures for R2DBC drivers.
-   *
-   * <p>Allows customization of authentication error detection logic to support vendor-specific
-   * error codes and messages.
-   *
-   * <h3>Using Default Detector</h3>
-   *
-   * <pre>{@code
-   * final var detector = R2dbcRetry.AuthErrorDetector.defaultDetector();
-   * if (detector.isAuthError(throwable)) {
-   *     System.out.println("Authentication error detected");
-   * }
-   * }</pre>
-   *
-   * <h3>Combining Detectors</h3>
-   *
-   * <pre>{@code
-   * var combined = R2dbcRetry.AuthErrorDetector.defaultDetector()
-   *     .or(R2dbcRetry.AuthErrorDetector.custom(t -> true));
-   * }</pre>
-   */
-  @FunctionalInterface
-  public interface AuthErrorDetector {
-    /** Returns true if the provided Throwable represents an authentication error. */
-    boolean isAuthError(Throwable error);
-
-    /**
-     * Returns the default detector which delegates to {@link R2dbcRetry#isAuthError(Throwable)}.
-     */
-    static AuthErrorDetector defaultDetector() {
-      return R2dbcRetry::isAuthError;
-    }
-
-    /** Creates a custom detector from a predicate. */
-    static AuthErrorDetector custom(final Predicate<Throwable> predicate) {
-      return predicate::test;
-    }
-
-    /** Combines this detector with another using OR semantics. */
-    default AuthErrorDetector or(final AuthErrorDetector other) {
-      return e -> this.isAuthError(e) || other.isAuthError(e);
-    }
   }
 
   /**
@@ -241,5 +195,50 @@ public final class R2dbcRetry {
       cur = cur.getCause();
     }
     return null;
+  }
+
+  /**
+   * Pluggable authentication error detector for identifying auth failures for R2DBC drivers.
+   *
+   * <p>Allows customization of authentication error detection logic to support vendor-specific
+   * error codes and messages.
+   *
+   * <h3>Using Default Detector</h3>
+   *
+   * <pre>{@code
+   * final var detector = R2dbcRetry.AuthErrorDetector.defaultDetector();
+   * if (detector.isAuthError(throwable)) {
+   *     System.out.println("Authentication error detected");
+   * }
+   * }</pre>
+   *
+   * <h3>Combining Detectors</h3>
+   *
+   * <pre>{@code
+   * var combined = R2dbcRetry.AuthErrorDetector.defaultDetector()
+   *     .or(R2dbcRetry.AuthErrorDetector.custom(t -> true));
+   * }</pre>
+   */
+  @FunctionalInterface
+  public interface AuthErrorDetector {
+    /**
+     * Returns the default detector which delegates to {@link R2dbcRetry#isAuthError(Throwable)}.
+     */
+    static AuthErrorDetector defaultDetector() {
+      return R2dbcRetry::isAuthError;
+    }
+
+    /** Creates a custom detector from a predicate. */
+    static AuthErrorDetector custom(final Predicate<Throwable> predicate) {
+      return predicate::test;
+    }
+
+    /** Returns true if the provided Throwable represents an authentication error. */
+    boolean isAuthError(Throwable error);
+
+    /** Combines this detector with another using OR semantics. */
+    default AuthErrorDetector or(final AuthErrorDetector other) {
+      return e -> this.isAuthError(e) || other.isAuthError(e);
+    }
   }
 }

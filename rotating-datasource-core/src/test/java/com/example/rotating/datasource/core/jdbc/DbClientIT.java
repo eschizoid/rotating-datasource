@@ -25,12 +25,11 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class DbClientIT {
 
+  private static final String SECRET_ID = "it/pg/dbclient";
   private PostgreSQLContainer<?> postgres;
   private GenericContainer<?> localstack;
   private SecretsManagerClient smClient;
   private RotatingDataSource rotatingDs;
-
-  private static final String SECRET_ID = "it/pg/dbclient";
 
   @BeforeAll
   void startContainersAndSeedSecret() {

@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -31,12 +32,70 @@ class RotatingConnectionFactoryIT {
   private static final DockerImageName LOCALSTACK_IMAGE =
       DockerImageName.parse("localstack/localstack:3");
   private static final String SECRET_ID = "r2dbc/test/secret";
-
+  private final AtomicReference<String> currentPassword = new AtomicReference<>("initialPass");
   private GenericContainer<?> localstack;
   private SecretsManagerClient secretsClient;
   private PostgreSQLContainer<?> postgres;
 
-  private final AtomicReference<String> currentPassword = new AtomicReference<>("initialPass");
+  private static boolean dockerAvailable() {
+    try {
+      // simple TCP check to local docker daemon via env; testcontainers does this internally
+      Class.forName("org.testcontainers.DockerClientFactory");
+      DockerClientFactory.instance().client();
+      return true;
+    } catch (Throwable t) {
+      return false;
+    }
+  }
+
+  private static void configureSecretsManagerForLocalstack(final GenericContainer<?> ls) {
+    System.setProperty(
+        "aws.sm.endpoint", "http://%s:%d".formatted(ls.getHost(), ls.getMappedPort(4566)));
+    System.setProperty("aws.region", "us-east-1");
+    System.setProperty("aws.accessKeyId", "test");
+    System.setProperty("aws.secretAccessKey", "test");
+    SecretsManagerProvider.resetClient();
+  }
+
+  private static SecretsManagerClient buildLocalstackClient(final GenericContainer<?> ls) {
+    final var endpoint = "http://%s:%d".formatted(ls.getHost(), ls.getMappedPort(4566));
+    return SecretsManagerClient.builder()
+        .endpointOverride(URI.create(endpoint))
+        .region(Region.US_EAST_1)
+        .credentialsProvider(
+            StaticCredentialsProvider.create(AwsBasicCredentials.create("test", "test")))
+        .build();
+  }
+
+  private static String buildSecretJson(final PostgreSQLContainer<?> pg, final String password) {
+    return ("""
+        {
+          "username": "%s",
+          "password": "%s",
+          "engine": "postgres",
+          "host": "%s",
+          "port": %d,
+          "dbname": "%s"
+        }
+        """)
+        .formatted(
+            pg.getUsername(),
+            password,
+            pg.getHost(),
+            pg.getFirstMappedPort(),
+            pg.getDatabaseName());
+  }
+
+  private static String queryNow(final ConnectionFactory cf) {
+    return Mono.usingWhen(
+            Mono.from(cf.create()),
+            conn ->
+                Mono.from(conn.createStatement("SELECT NOW()").execute())
+                    .flatMap(
+                        result -> Mono.from(result.map((row, md) -> row.get(0, String.class)))),
+            conn -> Mono.from(conn.close()))
+        .block();
+  }
 
   @BeforeAll
   void setup() {
@@ -194,65 +253,5 @@ class RotatingConnectionFactoryIT {
       final var poolCfg = ConnectionPoolConfiguration.builder(base).build();
       return new ConnectionPool(poolCfg);
     };
-  }
-
-  private static boolean dockerAvailable() {
-    try {
-      // simple TCP check to local docker daemon via env; testcontainers does this internally
-      Class.forName("org.testcontainers.DockerClientFactory");
-      org.testcontainers.DockerClientFactory.instance().client();
-      return true;
-    } catch (Throwable t) {
-      return false;
-    }
-  }
-
-  private static void configureSecretsManagerForLocalstack(final GenericContainer<?> ls) {
-    System.setProperty(
-        "aws.sm.endpoint", "http://%s:%d".formatted(ls.getHost(), ls.getMappedPort(4566)));
-    System.setProperty("aws.region", "us-east-1");
-    System.setProperty("aws.accessKeyId", "test");
-    System.setProperty("aws.secretAccessKey", "test");
-    SecretsManagerProvider.resetClient();
-  }
-
-  private static SecretsManagerClient buildLocalstackClient(final GenericContainer<?> ls) {
-    final var endpoint = "http://%s:%d".formatted(ls.getHost(), ls.getMappedPort(4566));
-    return SecretsManagerClient.builder()
-        .endpointOverride(URI.create(endpoint))
-        .region(Region.US_EAST_1)
-        .credentialsProvider(
-            StaticCredentialsProvider.create(AwsBasicCredentials.create("test", "test")))
-        .build();
-  }
-
-  private static String buildSecretJson(final PostgreSQLContainer<?> pg, final String password) {
-    return ("""
-        {
-          "username": "%s",
-          "password": "%s",
-          "engine": "postgres",
-          "host": "%s",
-          "port": %d,
-          "dbname": "%s"
-        }
-        """)
-        .formatted(
-            pg.getUsername(),
-            password,
-            pg.getHost(),
-            pg.getFirstMappedPort(),
-            pg.getDatabaseName());
-  }
-
-  private static String queryNow(final ConnectionFactory cf) {
-    return Mono.usingWhen(
-            Mono.from(cf.create()),
-            conn ->
-                Mono.from(conn.createStatement("SELECT NOW()").execute())
-                    .flatMap(
-                        result -> Mono.from(result.map((row, md) -> row.get(0, String.class)))),
-            conn -> Mono.from(conn.close()))
-        .block();
   }
 }

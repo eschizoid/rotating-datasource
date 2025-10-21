@@ -191,6 +191,223 @@ public final class RotatingDataSource implements DataSource {
     return new Builder();
   }
 
+  @Override
+  public Connection getConnection() {
+    checkLatestVersionAndRefreshIfNeeded();
+
+    return transientRetry(
+        () -> authRetry(this::tryGetConnectionWithFallback, this::reset, authErrorDetector),
+        retryPolicy);
+  }
+
+  @Override
+  public Connection getConnection(final String username, final String password) {
+    throw new UnsupportedOperationException(
+        "Credentials are managed at the pool level via DataSourceFactory");
+  }
+
+  public void reset() {
+    if (!isRefreshing.compareAndSet(false, true)) {
+      logger.log(DEBUG, "Reset already in progress, skipping");
+      return;
+    }
+
+    try {
+      logger.log(INFO, "Refreshing credentials for secret: {0}", secretId);
+
+      final var oldDs = primaryDataSource.get();
+      final DataSource newDs;
+      try {
+        newDs = createDataSource();
+      } catch (final Exception e) {
+        logger.log(ERROR, "Failed to create new DataSource during reset", e);
+        isRefreshing.set(false);
+        throw new RuntimeException("Credential refresh failed", e);
+      }
+      primaryDataSource.set(newDs);
+
+      final var pendingGrace = pendingGracePeriodCleanup.getAndSet(null);
+      if (pendingGrace != null && !pendingGrace.isDone()) {
+        pendingGrace.cancel(true);
+        logger.log(DEBUG, "Cancelled pending grace period cleanup from previous rotation");
+      }
+
+      if (!overlapDuration.isZero()) {
+        final var previousSecondary = secondaryDataSource.getAndSet(oldDs);
+        if (previousSecondary != null) closeDataSource(previousSecondary);
+
+        final var expiresAt = Instant.now().plus(overlapDuration);
+        secondaryExpiresAt.set(expiresAt);
+
+        final var cleanup =
+            CompletableFuture.runAsync(
+                () -> {
+                  try {
+                    Thread.sleep(overlapDuration.toMillis());
+                    final var expired = secondaryDataSource.getAndSet(null);
+                    if (expired != null) {
+                      closeDataSource(expired);
+                      logger.log(INFO, "Closed secondary DataSource after overlap period");
+                    }
+                    secondaryExpiresAt.set(null);
+                  } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                  }
+                });
+        pendingSecondaryCleanup.set(cleanup);
+      } else {
+        final var cleanup =
+            CompletableFuture.runAsync(
+                () -> {
+                  try {
+                    Thread.sleep(gracePeriod.toMillis());
+                    closeDataSource(oldDs);
+                    logger.log(INFO, "Closed old DataSource after grace period");
+                  } catch (final InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                  }
+                });
+        pendingGracePeriodCleanup.set(cleanup);
+      }
+
+      logger.log(INFO, "Credentials refreshed successfully");
+    } catch (final Exception e) {
+      logger.log(ERROR, "Failed to refresh credentials", e);
+      throw new RuntimeException(e.getMessage(), e);
+    } finally {
+      isRefreshing.set(false);
+    }
+  }
+
+  public void shutdown() {
+    if (scheduler != null) {
+      scheduler.shutdownNow();
+      try {
+        if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) scheduler.shutdownNow();
+      } catch (final InterruptedException e) {
+        scheduler.shutdownNow();
+        Thread.currentThread().interrupt();
+      }
+    }
+
+    final var pendingSecondary = pendingSecondaryCleanup.getAndSet(null);
+    if (pendingSecondary != null && !pendingSecondary.isDone()) pendingSecondary.cancel(true);
+
+    final var pendingGrace = pendingGracePeriodCleanup.getAndSet(null);
+    if (pendingGrace != null && !pendingGrace.isDone()) pendingGrace.cancel(true);
+
+    closeDataSource(primaryDataSource.get());
+    closeDataSource(secondaryDataSource.get());
+
+    secondaryDataSource.set(null);
+    secondaryExpiresAt.set(null);
+  }
+
+  @Override
+  public PrintWriter getLogWriter() throws SQLException {
+    return primaryDataSource.get().getLogWriter();
+  }
+
+  @Override
+  public void setLogWriter(final PrintWriter out) throws SQLException {
+    primaryDataSource.get().setLogWriter(out);
+  }
+
+  @Override
+  public int getLoginTimeout() throws SQLException {
+    return primaryDataSource.get().getLoginTimeout();
+  }
+
+  @Override
+  public void setLoginTimeout(final int seconds) throws SQLException {
+    primaryDataSource.get().setLoginTimeout(seconds);
+  }
+
+  @Override
+  public java.util.logging.Logger getParentLogger() throws SQLFeatureNotSupportedException {
+    return primaryDataSource.get().getParentLogger();
+  }
+
+  @Override
+  public <T> T unwrap(final Class<T> clazz) throws SQLException {
+    if (clazz.isInstance(this)) return clazz.cast(this);
+    return primaryDataSource.get().unwrap(clazz);
+  }
+
+  @Override
+  public boolean isWrapperFor(final Class<?> iface) throws SQLException {
+    return iface.isInstance(this) || primaryDataSource.get().isWrapperFor(iface);
+  }
+
+  public boolean isOverlapActive() {
+    final var expiresAt = secondaryExpiresAt.get();
+    if (expiresAt == null) return false;
+
+    final var isBeforeExpiration = Instant.now().isBefore(expiresAt);
+    return isBeforeExpiration && secondaryDataSource.get() != null;
+  }
+
+  public Optional<Instant> getOverlapExpiresAt() {
+    return Optional.ofNullable(secondaryExpiresAt.get());
+  }
+
+  private Connection tryGetConnectionWithFallback() {
+    try {
+      return primaryDataSource.get().getConnection();
+    } catch (final SQLException e) {
+      if (authErrorDetector.isAuthError(e) && isOverlapActive()) {
+        logger.log(INFO, "Primary auth failed, trying secondary during overlap");
+        try {
+          return secondaryDataSource.get().getConnection();
+        } catch (final SQLException secondaryException) {
+          throw new RuntimeException(secondaryException);
+        }
+      }
+      throw new RuntimeException(e);
+    }
+  }
+
+  private void checkAndRefresh() {
+    try {
+      final var latestVersionId = SecretHelper.getSecretVersion(secretId);
+      if (!latestVersionId.equals(cachedVersionId.get())) {
+        logger.log(INFO, "Secret version changed, refreshing DataSource");
+        reset();
+      }
+    } catch (final Exception e) {
+      logger.log(WARNING, "Failed to check secret version", e);
+    }
+  }
+
+  private void checkLatestVersionAndRefreshIfNeeded() {
+    try {
+      final var latest = SecretHelper.getSecretVersion(secretId);
+      final var current = cachedVersionId.get();
+      if (!latest.equals(current)) {
+        logger.log(DEBUG, "Detected new secret version during connection acquisition");
+        reset();
+      }
+    } catch (final Exception e) {
+      logger.log(WARNING, "Version check failed during connection acquisition", e);
+    }
+  }
+
+  private DataSource createDataSource() {
+    final var versionId = SecretHelper.getSecretVersion(secretId);
+    cachedVersionId.set(versionId);
+    return Optional.of(secretId).map(SecretHelper::getDbSecret).map(factory::create).orElseThrow();
+  }
+
+  private void closeDataSource(final DataSource ds) {
+    if (ds instanceof AutoCloseable ac) {
+      try {
+        ac.close();
+      } catch (final Exception e) {
+        logger.log(WARNING, "Failed to close DataSource", e);
+      }
+    }
+  }
+
   /**
    * Builder for creating {@link RotatingDataSource} instances with fluent configuration.
    *
@@ -348,223 +565,6 @@ public final class RotatingDataSource implements DataSource {
       if (gracePeriod == null || gracePeriod.isNegative())
         throw new IllegalArgumentException("gracePeriod must be non-negative");
       return new RotatingDataSource(this);
-    }
-  }
-
-  @Override
-  public Connection getConnection() {
-    checkLatestVersionAndRefreshIfNeeded();
-
-    return transientRetry(
-        () -> authRetry(this::tryGetConnectionWithFallback, this::reset, authErrorDetector),
-        retryPolicy);
-  }
-
-  @Override
-  public Connection getConnection(final String username, final String password) {
-    throw new UnsupportedOperationException(
-        "Credentials are managed at the pool level via DataSourceFactory");
-  }
-
-  public void reset() {
-    if (!isRefreshing.compareAndSet(false, true)) {
-      logger.log(DEBUG, "Reset already in progress, skipping");
-      return;
-    }
-
-    try {
-      logger.log(INFO, "Refreshing credentials for secret: {0}", secretId);
-
-      final var oldDs = primaryDataSource.get();
-      final DataSource newDs;
-      try {
-        newDs = createDataSource();
-      } catch (final Exception e) {
-        logger.log(ERROR, "Failed to create new DataSource during reset", e);
-        isRefreshing.set(false);
-        throw new RuntimeException("Credential refresh failed", e);
-      }
-      primaryDataSource.set(newDs);
-
-      final var pendingGrace = pendingGracePeriodCleanup.getAndSet(null);
-      if (pendingGrace != null && !pendingGrace.isDone()) {
-        pendingGrace.cancel(true);
-        logger.log(DEBUG, "Cancelled pending grace period cleanup from previous rotation");
-      }
-
-      if (!overlapDuration.isZero()) {
-        final var previousSecondary = secondaryDataSource.getAndSet(oldDs);
-        if (previousSecondary != null) closeDataSource(previousSecondary);
-
-        final var expiresAt = Instant.now().plus(overlapDuration);
-        secondaryExpiresAt.set(expiresAt);
-
-        final var cleanup =
-            CompletableFuture.runAsync(
-                () -> {
-                  try {
-                    Thread.sleep(overlapDuration.toMillis());
-                    final var expired = secondaryDataSource.getAndSet(null);
-                    if (expired != null) {
-                      closeDataSource(expired);
-                      logger.log(INFO, "Closed secondary DataSource after overlap period");
-                    }
-                    secondaryExpiresAt.set(null);
-                  } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                  }
-                });
-        pendingSecondaryCleanup.set(cleanup);
-      } else {
-        final var cleanup =
-            CompletableFuture.runAsync(
-                () -> {
-                  try {
-                    Thread.sleep(gracePeriod.toMillis());
-                    closeDataSource(oldDs);
-                    logger.log(INFO, "Closed old DataSource after grace period");
-                  } catch (final InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                  }
-                });
-        pendingGracePeriodCleanup.set(cleanup);
-      }
-
-      logger.log(INFO, "Credentials refreshed successfully");
-    } catch (final Exception e) {
-      logger.log(ERROR, "Failed to refresh credentials", e);
-      throw new RuntimeException(e.getMessage(), e);
-    } finally {
-      isRefreshing.set(false);
-    }
-  }
-
-  public void shutdown() {
-    if (scheduler != null) {
-      scheduler.shutdownNow();
-      try {
-        if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) scheduler.shutdownNow();
-      } catch (final InterruptedException e) {
-        scheduler.shutdownNow();
-        Thread.currentThread().interrupt();
-      }
-    }
-
-    final var pendingSecondary = pendingSecondaryCleanup.getAndSet(null);
-    if (pendingSecondary != null && !pendingSecondary.isDone()) pendingSecondary.cancel(true);
-
-    final var pendingGrace = pendingGracePeriodCleanup.getAndSet(null);
-    if (pendingGrace != null && !pendingGrace.isDone()) pendingGrace.cancel(true);
-
-    closeDataSource(primaryDataSource.get());
-    closeDataSource(secondaryDataSource.get());
-
-    secondaryDataSource.set(null);
-    secondaryExpiresAt.set(null);
-  }
-
-  @Override
-  public PrintWriter getLogWriter() throws SQLException {
-    return primaryDataSource.get().getLogWriter();
-  }
-
-  @Override
-  public void setLogWriter(final PrintWriter out) throws SQLException {
-    primaryDataSource.get().setLogWriter(out);
-  }
-
-  @Override
-  public void setLoginTimeout(final int seconds) throws SQLException {
-    primaryDataSource.get().setLoginTimeout(seconds);
-  }
-
-  @Override
-  public int getLoginTimeout() throws SQLException {
-    return primaryDataSource.get().getLoginTimeout();
-  }
-
-  @Override
-  public java.util.logging.Logger getParentLogger() throws SQLFeatureNotSupportedException {
-    return primaryDataSource.get().getParentLogger();
-  }
-
-  @Override
-  public <T> T unwrap(final Class<T> clazz) throws SQLException {
-    if (clazz.isInstance(this)) return clazz.cast(this);
-    return primaryDataSource.get().unwrap(clazz);
-  }
-
-  @Override
-  public boolean isWrapperFor(final Class<?> iface) throws SQLException {
-    return iface.isInstance(this) || primaryDataSource.get().isWrapperFor(iface);
-  }
-
-  public boolean isOverlapActive() {
-    final var expiresAt = secondaryExpiresAt.get();
-    if (expiresAt == null) return false;
-
-    final var isBeforeExpiration = Instant.now().isBefore(expiresAt);
-    return isBeforeExpiration && secondaryDataSource.get() != null;
-  }
-
-  public Optional<Instant> getOverlapExpiresAt() {
-    return Optional.ofNullable(secondaryExpiresAt.get());
-  }
-
-  private Connection tryGetConnectionWithFallback() {
-    try {
-      return primaryDataSource.get().getConnection();
-    } catch (final SQLException e) {
-      if (authErrorDetector.isAuthError(e) && isOverlapActive()) {
-        logger.log(INFO, "Primary auth failed, trying secondary during overlap");
-        try {
-          return secondaryDataSource.get().getConnection();
-        } catch (final SQLException secondaryException) {
-          throw new RuntimeException(secondaryException);
-        }
-      }
-      throw new RuntimeException(e);
-    }
-  }
-
-  private void checkAndRefresh() {
-    try {
-      final var latestVersionId = SecretHelper.getSecretVersion(secretId);
-      if (!latestVersionId.equals(cachedVersionId.get())) {
-        logger.log(INFO, "Secret version changed, refreshing DataSource");
-        reset();
-      }
-    } catch (final Exception e) {
-      logger.log(WARNING, "Failed to check secret version", e);
-    }
-  }
-
-  private void checkLatestVersionAndRefreshIfNeeded() {
-    try {
-      final var latest = SecretHelper.getSecretVersion(secretId);
-      final var current = cachedVersionId.get();
-      if (!latest.equals(current)) {
-        logger.log(DEBUG, "Detected new secret version during connection acquisition");
-        reset();
-      }
-    } catch (final Exception e) {
-      logger.log(WARNING, "Version check failed during connection acquisition", e);
-    }
-  }
-
-  private DataSource createDataSource() {
-    final var versionId = SecretHelper.getSecretVersion(secretId);
-    cachedVersionId.set(versionId);
-    return Optional.of(secretId).map(SecretHelper::getDbSecret).map(factory::create).orElseThrow();
-  }
-
-  private void closeDataSource(final DataSource ds) {
-    if (ds instanceof AutoCloseable ac) {
-      try {
-        ac.close();
-      } catch (final Exception e) {
-        logger.log(WARNING, "Failed to close DataSource", e);
-      }
     }
   }
 }
