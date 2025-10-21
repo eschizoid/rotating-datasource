@@ -1,7 +1,6 @@
 package com.example.rotating.datasource.core.reactive;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -12,12 +11,12 @@ import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.ConnectionFactoryMetadata;
 import io.r2dbc.spi.R2dbcNonTransientResourceException;
 import io.r2dbc.spi.R2dbcTransientResourceException;
-import org.reactivestreams.Publisher;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.*;
 import org.mockito.MockedStatic;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -90,7 +89,9 @@ class RotatingConnectionFactoryTest {
     }
 
     @Override
-    public String toString() { return name; }
+    public String toString() {
+      return name;
+    }
   }
 
   @Test
@@ -172,14 +173,14 @@ class RotatingConnectionFactoryTest {
             new DbSecret("u", "v1-authfail", "postgres", "host", 5432, "db"),
             new DbSecret("u", "v2", "postgres", "host", 5432, "db"));
 
-    ConnectionFactoryProvider provider = secret -> {
-      final String pw = secret.password();
-      if (pw.contains("authfail")) return new TestCF("cf-auth").authFailAlways();
-      return new TestCF("cf-ok");
-    };
+    ConnectionFactoryProvider provider =
+        secret -> {
+          final String pw = secret.password();
+          if (pw.contains("authfail")) return new TestCF("cf-auth").authFailAlways();
+          return new TestCF("cf-ok");
+        };
 
-    final var rcf =
-        RotatingConnectionFactory.builder().secretId("sid").factory(provider).build();
+    final var rcf = RotatingConnectionFactory.builder().secretId("sid").factory(provider).build();
 
     // Attempt should perform reset on auth error and then succeed
     assertNotNull(Mono.from(rcf.create()).block());
@@ -198,8 +199,7 @@ class RotatingConnectionFactoryTest {
 
     ConnectionFactoryProvider provider = secret -> new TestCF("cf-t").transientFailNTimes(2);
 
-    final var rcf =
-        RotatingConnectionFactory.builder().secretId("sid").factory(provider).build();
+    final var rcf = RotatingConnectionFactory.builder().secretId("sid").factory(provider).build();
 
     assertNotNull(Mono.from(rcf.create()).block());
 
@@ -219,7 +219,9 @@ class RotatingConnectionFactoryTest {
         RotatingConnectionFactory.builder().secretId("sid").factory(providerWithBehavior()).build();
 
     // Now make the version check throw during create()
-    secretMock.when(() -> SecretHelper.getSecretVersion(anyString())).thenThrow(new RuntimeException("boom"));
+    secretMock
+        .when(() -> SecretHelper.getSecretVersion(anyString()))
+        .thenThrow(new RuntimeException("boom"));
 
     assertNotNull(Mono.from(rcf.create()).block());
 
@@ -237,11 +239,12 @@ class RotatingConnectionFactoryTest {
             new DbSecret("u", "v1", "postgres", "host", 5432, "db"),
             new DbSecret("u", "v2-authfail", "postgres", "host", 5432, "db"));
 
-    ConnectionFactoryProvider provider = secret -> {
-      final String pw = secret.password();
-      if (pw.contains("authfail")) return new TestCF("cf-primary").authFailAlways();
-      return new TestCF("cf-secondary");
-    };
+    ConnectionFactoryProvider provider =
+        secret -> {
+          final String pw = secret.password();
+          if (pw.contains("authfail")) return new TestCF("cf-primary").authFailAlways();
+          return new TestCF("cf-secondary");
+        };
 
     final var rcf =
         RotatingConnectionFactory.builder()
@@ -280,7 +283,8 @@ class RotatingConnectionFactoryTest {
 
     rcf.reset().block();
 
-    // Wait enough for grace period disposal lambda to run; no observable effect, just ensure no crash
+    // Wait enough for grace period disposal lambda to run; no observable effect, just ensure no
+    // crash
     TimeUnit.MILLISECONDS.sleep(200);
     assertNotNull(rcf.getMetadata());
 

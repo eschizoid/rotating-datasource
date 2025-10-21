@@ -1,5 +1,8 @@
 package com.example.rotating.datasource.core.reactive;
 
+import static java.lang.System.Logger.Level.DEBUG;
+import static java.lang.System.Logger.Level.INFO;
+
 import com.example.rotating.datasource.core.secrets.SecretHelper;
 import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
@@ -13,9 +16,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.retry.Retry;
-
-import static java.lang.System.Logger.Level.DEBUG;
-import static java.lang.System.Logger.Level.INFO;
 
 /**
  * R2DBC ConnectionFactory wrapper that automatically survives credential rotations with built-in
@@ -265,7 +265,11 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
   public Mono<Connection> create() {
     return checkLatestVersionAndRefreshIfNeeded()
         .then(Mono.defer(this::tryGetConnectionWithFallback))
-        .retryWhen(authRetrySpec())
+        .onErrorResume(
+            t ->
+                authErrorDetector.isAuthError(t)
+                    ? reset().then(Mono.defer(this::tryGetConnectionWithFallback))
+                    : Mono.error(t))
         .retryWhen(transientRetrySpec());
   }
 
@@ -294,55 +298,63 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
             return Mono.empty();
           }
 
-          return Mono.fromRunnable(
-                  () -> {
-                    logger.log(
-                        INFO,
-                        "Refreshing credentials for secret: {0}",
-                        secretId);
-
-                    final var oldFactory = primaryFactory.get();
-                    final var newFactory = createConnectionFactory();
-                    primaryFactory.set(newFactory);
-
-                    if (!overlapDuration.isZero()) {
-                      final var previousSecondary = secondaryFactory.getAndSet(oldFactory);
-                      if (previousSecondary != null) {
-                        disposeFactory(previousSecondary);
-                      }
-
-                      secondaryExpiresAt.set(Instant.now().plus(overlapDuration));
-
-                      Mono.delay(overlapDuration, Schedulers.boundedElastic())
-                          .doOnNext(
-                              __ -> {
-                                final var expired = secondaryFactory.getAndSet(null);
-                                if (expired != null) {
-                                  disposeFactory(expired);
-                                  logger.log(
-                                      INFO,
-                                      "Closed secondary factory after overlap");
-                                }
-                                secondaryExpiresAt.set(null);
-                              })
-                          .subscribe();
-                    } else {
-                      Mono.delay(gracePeriod, Schedulers.boundedElastic())
-                          .doOnNext(
-                              __ -> {
-                                disposeFactory(oldFactory);
-                                logger.log(
-                                    INFO,
-                                    "Closed old factory after grace period");
-                              })
-                          .subscribe();
-                    }
-
-                    logger.log(INFO, "Credentials refreshed successfully");
-                  })
+          return Mono.fromRunnable(this::swapAndScheduleDisposal)
               .doFinally(__ -> isRefreshing.set(false))
               .then();
         });
+  }
+
+  /** Performs the swap to a new ConnectionFactory and schedules disposal of old factories. */
+  private void swapAndScheduleDisposal() {
+    logger.log(INFO, "Refreshing credentials for secret: {0}", secretId);
+
+    final var oldFactory = primaryFactory.get();
+    final var newFactory = createConnectionFactory();
+    primaryFactory.set(newFactory);
+
+    if (!overlapDuration.isZero()) {
+      final var previousSecondary = secondaryFactory.getAndSet(oldFactory);
+      if (previousSecondary != null) disposeFactory(previousSecondary);
+
+      secondaryExpiresAt.set(Instant.now().plus(overlapDuration));
+
+      Schedulers.boundedElastic()
+          .schedule(
+              () -> {
+                final var expired = secondaryFactory.getAndSet(null);
+                if (expired != null) {
+                  disposeFactory(expired);
+                  logger.log(INFO, "Closed secondary factory after overlap");
+                }
+                secondaryExpiresAt.set(null);
+              },
+              overlapDuration.toMillis(),
+              TimeUnit.MILLISECONDS);
+    } else {
+      Schedulers.boundedElastic()
+          .schedule(
+              () -> {
+                disposeFactory(oldFactory);
+                logger.log(INFO, "Closed old factory after grace period");
+              },
+              gracePeriod.toMillis(),
+              TimeUnit.MILLISECONDS);
+    }
+
+    logger.log(INFO, "Credentials refreshed successfully");
+  }
+
+  /** Synchronous credential refresh used by the periodic checker. */
+  private void refreshNowSync() {
+    if (!isRefreshing.compareAndSet(false, true)) {
+      logger.log(DEBUG, "Reset already in progress");
+      return;
+    }
+    try {
+      swapAndScheduleDisposal();
+    } finally {
+      isRefreshing.set(false);
+    }
   }
 
   /**
@@ -371,22 +383,10 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
         .onErrorResume(
             e -> {
               if (authErrorDetector.isAuthError(e) && isOverlapActive()) {
-                logger.log(
-                    INFO,
-                    "Primary auth failed, trying secondary during overlap");
+                logger.log(INFO, "Primary auth failed, trying secondary during overlap");
                 return Mono.from(secondaryFactory.get().create()).cast(Connection.class);
               }
               return Mono.error(e);
-            });
-  }
-
-  private Retry authRetrySpec() {
-    return Retry.max(1)
-        .filter(authErrorDetector::isAuthError)
-        .doBeforeRetry(
-            signal -> {
-              logger.log(System.Logger.Level.WARNING, "Auth error detected, resetting credentials");
-              reset().block();
             });
   }
 
@@ -408,7 +408,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
       final var latestVersionId = SecretHelper.getSecretVersion(secretId);
       if (!latestVersionId.equals(cachedVersionId.get())) {
         logger.log(INFO, "Secret version changed, refreshing");
-        reset().block();
+        refreshNowSync();
       }
     } catch (Exception e) {
       logger.log(System.Logger.Level.WARNING, "Failed to check secret version", e);
@@ -420,9 +420,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
         .flatMap(
             latest -> {
               if (!latest.equals(cachedVersionId.get())) {
-                logger.log(
-                    DEBUG,
-                    "Detected new version during connection acquisition");
+                logger.log(DEBUG, "Detected new version during connection acquisition");
                 return reset();
               }
               return Mono.empty();
@@ -442,9 +440,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
   }
 
   private void disposeFactory(ConnectionFactory factory) {
-    if (factory instanceof reactor.core.Disposable disposable) {
-      disposable.dispose();
-    }
+    if (factory instanceof reactor.core.Disposable disposable) disposable.dispose();
   }
 
   /**
