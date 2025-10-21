@@ -368,10 +368,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
   public Mono<Void> shutdown() {
     return Mono.fromRunnable(
         () -> {
-          if (scheduler != null) {
-            scheduler.dispose();
-          }
-
+          if (scheduler != null) scheduler.dispose();
           disposeFactory(primaryFactory.get());
           disposeFactory(secondaryFactory.get());
         });
