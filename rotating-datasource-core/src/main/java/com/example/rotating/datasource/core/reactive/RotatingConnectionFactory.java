@@ -14,6 +14,9 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.retry.Retry;
 
+import static java.lang.System.Logger.Level.DEBUG;
+import static java.lang.System.Logger.Level.INFO;
+
 /**
  * R2DBC ConnectionFactory wrapper that automatically survives credential rotations with built-in
  * retry and optional proactive refresh, mirroring RotatingDataSource features.
@@ -86,7 +89,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
 
   private reactor.core.Disposable scheduler;
 
-  private RotatingConnectionFactory(Builder builder) {
+  private RotatingConnectionFactory(final Builder builder) {
     this.secretId = builder.secretId;
     this.factory = builder.factory;
     this.authErrorDetector = builder.authErrorDetector;
@@ -154,7 +157,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
      * @param secretId the secret identifier
      * @return this builder
      */
-    public Builder secretId(String secretId) {
+    public Builder secretId(final String secretId) {
       this.secretId = secretId;
       return this;
     }
@@ -165,7 +168,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
      * @param factory function that creates a ConnectionFactory from a DbSecret
      * @return this builder
      */
-    public Builder factory(ConnectionFactoryProvider factory) {
+    public Builder factory(final ConnectionFactoryProvider factory) {
       this.factory = factory;
       return this;
     }
@@ -181,7 +184,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
      * @param refreshIntervalSeconds interval in seconds (0 to disable)
      * @return this builder
      */
-    public Builder refreshIntervalSeconds(long refreshIntervalSeconds) {
+    public Builder refreshIntervalSeconds(final long refreshIntervalSeconds) {
       this.refreshIntervalSeconds = refreshIntervalSeconds;
       return this;
     }
@@ -194,7 +197,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
      * @param authErrorDetector custom auth error detection logic
      * @return this builder
      */
-    public Builder authErrorDetector(R2dbcRetry.AuthErrorDetector authErrorDetector) {
+    public Builder authErrorDetector(final R2dbcRetry.AuthErrorDetector authErrorDetector) {
       this.authErrorDetector = authErrorDetector;
       return this;
     }
@@ -210,7 +213,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
      * @param overlapDuration how long to keep old credentials valid
      * @return this builder
      */
-    public Builder overlapDuration(Duration overlapDuration) {
+    public Builder overlapDuration(final Duration overlapDuration) {
       this.overlapDuration = overlapDuration;
       return this;
     }
@@ -226,7 +229,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
      * @param gracePeriod how long to wait before disposing old factories
      * @return this builder
      */
-    public Builder gracePeriod(Duration gracePeriod) {
+    public Builder gracePeriod(final Duration gracePeriod) {
       this.gracePeriod = gracePeriod;
       return this;
     }
@@ -287,14 +290,14 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
     return Mono.defer(
         () -> {
           if (!isRefreshing.compareAndSet(false, true)) {
-            logger.log(System.Logger.Level.DEBUG, "Reset already in progress");
+            logger.log(DEBUG, "Reset already in progress");
             return Mono.empty();
           }
 
           return Mono.fromRunnable(
                   () -> {
                     logger.log(
-                        System.Logger.Level.INFO,
+                        INFO,
                         "Refreshing credentials for secret: {0}",
                         secretId);
 
@@ -317,7 +320,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
                                 if (expired != null) {
                                   disposeFactory(expired);
                                   logger.log(
-                                      System.Logger.Level.INFO,
+                                      INFO,
                                       "Closed secondary factory after overlap");
                                 }
                                 secondaryExpiresAt.set(null);
@@ -329,13 +332,13 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
                               __ -> {
                                 disposeFactory(oldFactory);
                                 logger.log(
-                                    System.Logger.Level.INFO,
+                                    INFO,
                                     "Closed old factory after grace period");
                               })
                           .subscribe();
                     }
 
-                    logger.log(System.Logger.Level.INFO, "Credentials refreshed successfully");
+                    logger.log(INFO, "Credentials refreshed successfully");
                   })
               .doFinally(__ -> isRefreshing.set(false))
               .then();
@@ -369,7 +372,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
             e -> {
               if (authErrorDetector.isAuthError(e) && isOverlapActive()) {
                 logger.log(
-                    System.Logger.Level.INFO,
+                    INFO,
                     "Primary auth failed, trying secondary during overlap");
                 return Mono.from(secondaryFactory.get().create()).cast(Connection.class);
               }
@@ -395,7 +398,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
         .doBeforeRetry(
             signal ->
                 logger.log(
-                    System.Logger.Level.DEBUG,
+                    DEBUG,
                     "Transient error on attempt {0}, retrying...",
                     signal.totalRetries() + 1));
   }
@@ -404,7 +407,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
     try {
       final var latestVersionId = SecretHelper.getSecretVersion(secretId);
       if (!latestVersionId.equals(cachedVersionId.get())) {
-        logger.log(System.Logger.Level.INFO, "Secret version changed, refreshing");
+        logger.log(INFO, "Secret version changed, refreshing");
         reset().block();
       }
     } catch (Exception e) {
@@ -418,7 +421,7 @@ public final class RotatingConnectionFactory implements ConnectionFactory {
             latest -> {
               if (!latest.equals(cachedVersionId.get())) {
                 logger.log(
-                    System.Logger.Level.DEBUG,
+                    DEBUG,
                     "Detected new version during connection acquisition");
                 return reset();
               }
