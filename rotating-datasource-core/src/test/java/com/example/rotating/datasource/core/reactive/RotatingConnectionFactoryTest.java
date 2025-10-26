@@ -72,6 +72,11 @@ class RotatingConnectionFactoryTest {
     // initial metadata
     assertEquals("cf-v1", rcf.getMetadata().getName());
 
+    // Invoke private checkAndRefresh() reflectively to avoid scheduler thread issues
+    final var a = RotatingConnectionFactory.class.getDeclaredMethod("checkAndRefresh");
+    a.setAccessible(true);
+    a.invoke(rcf);
+
     // after refresh, metadata should reflect v2
     assertEquals("cf-v2", rcf.getMetadata().getName());
 

@@ -4,7 +4,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/** Minimal entity to satisfy Spring Data JPA repository typing. */
 @Entity
 @Table(name = "test")
 public class TestEntity {
