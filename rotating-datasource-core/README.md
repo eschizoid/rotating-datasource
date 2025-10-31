@@ -9,7 +9,7 @@ credential rotations seamlessly.
 - **`DbSecret`** — immutable record mapping AWS RDS-like secret JSON (username, password, engine, host, port, dbname)
 - **`SecretsManagerProvider`** — builds/configures the AWS Secrets Manager client
 - **`SecretHelper`** — loads and parses a secret into `DbSecret`
-- **`DataSourceFactory`** — functional interface to build a `javax.sql.DataSource` from a `DbSecret`
+- **`DataSourceFactoryProvider`** — functional interface to build a `javax.sql.DataSource` from a `DbSecret`
 - **`RotatingDataSource`** — DataSource wrapper with automatic retry on authentication failures and optional proactive
   secret refresh
 - **`Retry`** — flexible retry mechanism with configurable policies (fixed delay, exponential backoff) and
@@ -347,7 +347,7 @@ Manager.
 
 - Secrets Manager stores a JSON document with fields similar to the following.
 - RotatingDataSource reads that secret using SecretsManagerProvider/SecretHelper and builds your preferred connection
-  pool via a DataSourceFactory.
+  pool via a DataSourceFactoryProvider.
 - When Secrets Manager rotates the password, RotatingDataSource detects it and swaps in a new pool without downtime.
 
 ### Secret JSON formats

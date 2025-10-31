@@ -13,7 +13,7 @@ may straddle a rotation and surface an auth-related `SQLException`.
 
 ## What these examples demonstrate
 
-- Building a `DataSourceFactory` that produces a HikariCP `DataSource` from a `DbSecret`.
+- Building a `DataSourceFactoryProvider` that produces a HikariCP `DataSource` from a `DbSecret`.
 - Creating a `RotatingDataSource` with your secret id, optionally with a proactive refresh interval.
 - Using `Retry.authRetry` around ORM work so that when an auth-related `SQLException` occurs, the pool is reset and the
   operation retried once.

@@ -24,7 +24,7 @@ import com.zaxxer.hikari.HikariDataSource;
 
 final var factory = secret -> {
   var cfg = new HikariConfig();
-  cfg.setJdbcUrl("jdbc:postgresql://" + secret.host() + ":" + secret.port() + "/" + secret.dbname());
+  cfg.setJdbcUrl("jdbc:postgresql://%s:%s/%s".formatted(secret.host(), secret.port(), secret.dbname()));
   cfg.setUsername(secret.username());
   cfg.setPassword(secret.password());
   cfg.setMaximumPoolSize(10);
@@ -112,7 +112,7 @@ final var ds = RotatingDataSource.builder()
 - Does it automatically retry? Yes. getConnection() is wrapped with transient/auth retry using the configured policy
   (default builder policy: Retry.Policy.exponential(10, 1000L)).
 - Proactive refresh? Optional. Set refreshIntervalSeconds > 0 to poll the secret version and refresh in the background.
-- Any pool requirement? No. Your DataSourceFactory can create HikariCP, Tomcat JDBC, DBCP2, etc.
+- Any pool requirement? No. Your DataSourceFactoryProvider can create C3P0, HikariCP, Tomcat JDBC, DBCP2, etc.
 - ORMs? Just point them at the RotatingDataSource. Retry.authRetry is only for rare long-running units of work that
   straddle a rotation and surface an auth-related SQLException.
 
@@ -120,10 +120,10 @@ final var ds = RotatingDataSource.builder()
 
 ```java
 @Bean
-DataSourceFactory dataSourceFactory() { /* build HikariDataSource from secret */ }
+DataSourceFactoryProivder dataSourceFactory() { /* build HikariDataSource from secret */ }
 
 @Bean
-DataSource dataSource(final DataSourceFactory factory) {
+DataSource dataSource(final DataSourceFactoryProivder factory) {
   return RotatingDataSource.builder()
       .secretId(System.getProperty("db.secretId"))
       .factory(factory)

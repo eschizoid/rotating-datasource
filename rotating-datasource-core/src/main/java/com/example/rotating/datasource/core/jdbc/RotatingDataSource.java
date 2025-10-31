@@ -203,7 +203,7 @@ public final class RotatingDataSource implements DataSource {
   @Override
   public Connection getConnection(final String username, final String password) {
     throw new UnsupportedOperationException(
-        "Credentials are managed at the pool level via DataSourceFactory");
+        "Credentials are managed at the pool level via DataSourceFactoryProvider");
   }
 
   public void reset() {
